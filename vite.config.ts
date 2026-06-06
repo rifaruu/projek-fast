@@ -6,14 +6,12 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
     server: {
-    host: '0.0.0.0',
-    port: 5173,
-    cors: true,
+        host: '0.0.0.0',
+        port: 5173,
+        cors: true,
         hmr: {
-            host: 'localhost',
+            host: '192.168.43.99',
             overlay: true,
-            // host: '192.168.42.154',
-            // host: process.env.HOST || '192.168.42.154',
         },
         watch: {
             // Abaikan folder hasil-generate Wayfinder agar regenerasinya
