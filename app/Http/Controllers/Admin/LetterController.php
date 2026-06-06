@@ -105,19 +105,40 @@ class LetterController extends Controller
         $payload = $previewState['payload'] ?? [];
         abort_if(! is_array($payload), 404, 'Payload preview surat tidak valid.');
 
+        $user = $request->user()?->loadMissing('programStudi');
+
+        $previewData = $payload['data'];
+
+        if (array_key_exists('kepada_yth', $payload)) {
+            $previewData['kepada_yth'] = $payload['kepada_yth'];
+        }
+
+        if (array_key_exists('lampiran_keterangan', $payload)) {
+            $previewData['lampiran_keterangan'] = $payload['lampiran_keterangan'];
+        }
+
         $rendered = $this->templateService->renderJenisSuratPreview(
             $jenisSurat,
-            $payload['data'],
+            $previewData,
             [
                 'tanggal_surat' => now(),
                 'kota_surat' => \DB::table('template_global_settings')->where('key', 'kota_surat')->value('value') ?? 'Cilacap',    
                 'surat' => [
                     'nomor_surat' => 'AUTO/GENERATED/AFTER/APPROVAL',
                     'keperluan' => $payload['keperluan'],
+                    'tanggal_pengajuan' => now(),
+                    'tanggal_kebutuhan' => $payload['tanggal_kebutuhan'] ?? null,
+                    'type' => 'surat_keluar',
                 ],
                 'user' => [
-                    'name' => $request->user()?->name,
-                    'email' => $request->user()?->email,
+                    'name' => $user?->name,
+                    'email' => $user?->email,
+                    'nim_nip' => $user?->nim_nip,
+                    'nomor_induk' => $user?->nomor_induk,
+                    'no_telepon' => $user?->no_telepon,
+                    'programStudi' => [
+                        'nama' => $user?->programStudi?->nama,
+                    ],
                 ],
             ],
         );

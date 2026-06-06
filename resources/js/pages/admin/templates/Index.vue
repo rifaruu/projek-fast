@@ -37,7 +37,7 @@ type FieldOption  = { label: string; value: string };
 type FieldConfig  = { name: string; label: string; type: string; required: boolean; placeholder: string; help: string; options: FieldOption[] };
 type Template     = { id: number; name: string; template_header?: string|null; template_body: string; template_footer?: string|null; version: number; preview_url: string; placeholders: any[] };
 type JenisSuratItem = { id: number; nama: string; is_active: boolean; category?: any; template?: { id: number; name: string; version: number }|null };
-type JenisSurat   = { id: number; nama: string; slug?: string|null; kode_surat?: string|null; deskripsi?: string|null; is_active: boolean; perlu_approval: boolean; category?: any; allowed_role?: any; approval_role?: any; field_config: FieldConfig[]; template?: Template|null };
+type JenisSurat   = { id: number; nama: string; slug?: string|null; kode_surat?: string|null; kode_klasifikasi?: string|null; deskripsi?: string|null; is_active: boolean; perlu_approval: boolean; category?: any; allowed_role?: any; approval_role?: any; field_config: FieldConfig[]; template?: Template|null };
 type CategoryOption = { id: number; nama: string };
 type RoleOption   = { id: number; nama: string; slug: string };
 type GlobalSetting= { key: string; label: string; value?: string|null; tipe: string };
@@ -175,6 +175,7 @@ function parseCssLayout(cssStyle?: string|null) {
 const form = useForm({
     name:             props.selectedJenisSurat?.template?.name ?? '',
     kode_surat:       props.selectedJenisSurat?.kode_surat ?? '',
+    kode_klasifikasi: props.selectedJenisSurat?.kode_klasifikasi ?? '',
     category_id:      props.selectedJenisSurat?.category?.id ?? '' as any,
     approval_role_id: props.selectedJenisSurat?.approval_role?.id ?? '' as any,
     allowed_role_id:  props.selectedJenisSurat?.allowed_role?.id ?? '' as any,
@@ -199,6 +200,7 @@ watch(() => props.selectedJenisSurat, (sel) => {
     activeTab.value = 'template';
     form.name             = sel?.template?.name ?? '';
     form.kode_surat       = sel?.kode_surat ?? '';
+    form.kode_klasifikasi = sel?.kode_klasifikasi ?? '';
     form.category_id      = sel?.category?.id ?? '';
     form.approval_role_id = sel?.approval_role?.id ?? '';
     form.allowed_role_id  = sel?.allowed_role?.id ?? '';
@@ -229,6 +231,7 @@ function saveTemplate() {
         template_body: JSON.stringify(komponen.value),
         field_config: form.field_config,
         kode_surat: form.kode_surat,
+        kode_klasifikasi: form.kode_klasifikasi,
         category_id: form.category_id,
         approval_role_id: form.approval_role_id,
         allowed_role_id: form.allowed_role_id,
@@ -249,7 +252,7 @@ function deleteTemplate() {
 
 // ── Tambah ─────────────────────────────────────────────────────────────────
 const addForm = useForm({
-    nama: '', kode_surat: '', category_id: '' as any,
+    nama: '', kode_surat: '', kode_klasifikasi: '', category_id: '' as any,
     deskripsi: '', allowed_role_id: '' as any, approval_role_id: '' as any,
     perlu_approval: false, is_active: true,
 });
@@ -287,7 +290,7 @@ function duplicate(id: number) {
 const kopKeys     = ['nama_instansi', 'nama_fakultas', 'singkatan', 'keputusan', 'logo_path'];
 const footerKeys  = ['nama_instansi_footer', 'alamat_footer', 'telepon', 'website', 'email', 'fax'];
 const tampilanKeys= ['warna_primer'];
-const nomorKeys   = ['format_nomor', 'kota_surat'];
+const nomorKeys   = ['kode_prefix_nomor_surat', 'kode_fakultas_nomor_surat', 'kota_surat'];
 const marginKeys  = ['margin_top', 'margin_right', 'margin_bottom', 'margin_left'];
 const fontKeys    = ['font_size_default'];
 
@@ -297,7 +300,9 @@ function settingLabel(key: string): string {
         keputusan: 'Teks Keputusan', logo_path: 'Logo (path relatif)',
         nama_instansi_footer: 'Nama Instansi (Footer)', alamat_footer: 'Alamat (Footer)',
         telepon: 'Telepon', website: 'Website', email: 'Email', fax: 'Fax',
-        warna_primer: 'Warna Primer', format_nomor: 'Format Nomor Surat', kota_surat: 'Kota Default',
+        warna_primer: 'Warna Primer', format_nomor: 'Format Nomor Surat',
+        kode_prefix_nomor_surat: 'Prefix Nomor Surat', kode_fakultas_nomor_surat: 'Kode Fakultas Nomor Surat',
+        kota_surat: 'Kota Default',
         margin_top: 'Margin Atas', margin_right: 'Margin Kanan',
         margin_bottom: 'Margin Bawah', margin_left: 'Margin Kiri',
         font_size_default: 'Ukuran Font Default',
@@ -362,7 +367,6 @@ function settingLabel(key: string): string {
                             <div>
                                 <p class="text-xs text-slate-500">{{ selectedJenisSurat.category?.nama }}</p>
                                 <h2 class="text-lg font-bold text-slate-900">{{ selectedJenisSurat.nama }}</h2>
-                                <p v-if="selectedJenisSurat.kode_surat" class="font-mono text-xs text-slate-500">{{ selectedJenisSurat.kode_surat }}</p>
                             </div>
                             <div class="flex gap-2 shrink-0 flex-wrap justify-end">
                                 <button type="button" class="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors" @click="duplicate(selectedJenisSurat.id)">
@@ -815,8 +819,8 @@ function settingLabel(key: string): string {
                     <div v-if="activeTab==='meta'" class="rounded-2xl border border-slate-200 bg-white p-5">
                         <h3 class="mb-4 text-sm font-semibold text-slate-800">Informasi Jenis Surat</h3>
                         <div class="grid gap-4 sm:grid-cols-2">
-                            <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kode Surat</span>
-                                <input v-model="form.kode_surat" type="text" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 font-mono text-sm uppercase text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400" placeholder="CUTI-MHS" /></label>
+                            <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kode Klasifikasi</span>
+                                <input v-model="form.kode_klasifikasi" type="text" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 font-mono text-sm uppercase text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400" placeholder="KU" /></label>
                             <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kategori</span>
                                 <select v-model="form.category_id" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-emerald-400">
                                     <option value="">Tanpa kategori</option>
@@ -859,8 +863,10 @@ function settingLabel(key: string): string {
                         <input v-model="addForm.nama" type="text" required class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400" placeholder="Contoh: Surat Undangan Yudisium" />
                         <p v-if="addForm.errors.nama" class="text-xs text-red-500">{{ addForm.errors.nama }}</p></label>
                     <div class="grid grid-cols-2 gap-3">
-                        <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kode Surat</span>
-                            <input v-model="addForm.kode_surat" type="text" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 font-mono text-sm uppercase text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400" placeholder="UD-YUDIS" /></label>
+                        <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kode Klasifikasi</span>
+                            <input v-model="addForm.kode_klasifikasi" type="text" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 font-mono text-sm uppercase text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400" placeholder="KU" /></label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
                         <label class="space-y-1.5"><span class="text-xs font-medium text-slate-700">Kategori</span>
                             <select v-model="addForm.category_id" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-emerald-400">
                                 <option value="">Tanpa kategori</option>
@@ -989,4 +995,3 @@ function settingLabel(key: string): string {
         </Dialog>
     </AdminLayout>
 </template>
-

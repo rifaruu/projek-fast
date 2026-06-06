@@ -370,11 +370,14 @@ HTML;
         // ── QR Code ────────────────────────────────────────────────────
         $qrSvg    = $data['__qr_svg'] ?? '';
         $qrActive = $data['__qr_active'] ?? false;
+        $qrHidden = $data['__qr_hidden'] ?? false;
 
-        if ($qrActive && !empty($qrSvg)) {
+        if ($qrHidden) {
+            $qrHtml = '';
+        } elseif ($qrActive && !empty($qrSvg)) {
             // 3x3cm = 113px @ 96dpi; untuk PDF renderer biasanya 1cm ~ 37.8px
             $qrHtml = <<<HTML
-<div style="display: inline-block; text-align: center;">
+<div data-qr-embedded="true" style="display: inline-block; text-align: center;">
     <div style="width: 113px; height: 113px;">
         {$qrSvg}
     </div>
@@ -383,7 +386,7 @@ HTML;
 HTML;
         } else {
             $qrHtml = <<<HTML
-<div style="display: inline-block; text-align: center;">
+<div data-qr-embedded="true" style="display: inline-block; text-align: center;">
     <div style="width: 113px; height: 113px; border: 1.5px dashed #CBD5E1; background: #F8FAFC; display: flex; align-items: center; justify-content: center;">
         <p style="font-size: 7pt; color: #94A3B8; text-align: center; margin: 0; line-height: 1.5; padding: 8px;">QR Code akan muncul setelah disetujui</p>
     </div>
@@ -412,22 +415,27 @@ HTML;
             $textAlign = $alignMap[$i] ?? 'center';
             $ttdCols  .= <<<HTML
 <td style="vertical-align: top; text-align: {$textAlign}; padding: 0 8px 0 0; font-size: {$size};">
-    <p style="margin: 0 0 3px 0;">{$jabatan}</p>
-    <div style="height: 50px;"></div>
+    <p style="margin: 0 0 90px 0;">{$jabatan}</p>
     <p style="margin: 0; font-weight: bold;">{$nama}</p>
     <p style="margin: 0;">{$nik}</p>
 </td>
 HTML;
         }
 
+        $qrColumnHtml = $qrHidden
+            ? ''
+            : <<<HTML
+            <td style="width: 130px; vertical-align: top; text-align: center; padding: 0 0 0 8px;">
+                {$qrHtml}
+            </td>
+            HTML;
+
         return <<<HTML
 <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: {$size};">
     <tbody>
         <tr>
             {$ttdCols}
-            <td style="width: 130px; vertical-align: top; text-align: center; padding: 0 0 0 8px;">
-                {$qrHtml}
-            </td>
+            {$qrColumnHtml}
         </tr>
     </tbody>
     <div style="height: 35mm; display: block;"></div>

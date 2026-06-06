@@ -1,1 +1,1 @@
-a:3:{s:6:"_token";s:40:"QWhJysMct0CDnJ9BHrOZaGH4NJ4IW6WL4ezvCb3o";s:9:"_previous";a:2:{s:3:"url";s:39:"http://192.168.43.99:8080/verifikasi-qr";s:5:"route";s:14:"qr.verify.form";}s:6:"_flash";a:2:{s:3:"old";a:0:{}s:3:"new";a:0:{}}}
+a:3:{s:6:"_token";s:40:"QWhJysMct0CDnJ9BHrOZaGH4NJ4IW6WL4ezvCb3o";s:9:"_previous";a:2:{s:3:"url";s:76:"http://192.168.43.99:8080/verifikasi-qr/d8736caf-af95-4545-b3c9-6791c0759f4f";s:5:"route";s:9:"qr.verify";}s:6:"_flash";a:2:{s:3:"old";a:0:{}s:3:"new";a:0:{}}}

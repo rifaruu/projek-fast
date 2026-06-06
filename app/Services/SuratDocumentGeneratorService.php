@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\NomorSuratSequence;
 use App\Models\Surat;
+use App\Models\TemplateGlobalSetting;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -37,7 +39,7 @@ class SuratDocumentGeneratorService
             ])->save();
         }
 
-        $rendered     = $this->renderer->renderForSurat($surat->fresh());
+        $rendered     = $this->renderer->renderForSurat($surat->fresh(), false);
         $outputPath   = $this->makeOutputPath($surat);
         $freshSurat   = $surat->fresh(['jenisSurat']);
         $qrCodeBase64 = $this->makeQrCodeBase64($freshSurat);
@@ -127,10 +129,33 @@ class SuratDocumentGeneratorService
     {
         $surat->loadMissing('jenisSurat');
 
-        $code = strtoupper((string) ($surat->jenisSurat?->kode_surat ?: 'SURAT'));
-        $year = now()->format('Y');
+        $year = now()->year;
+        $prefix = strtoupper((string) TemplateGlobalSetting::get('kode_prefix_nomor_surat', 'B'));
+        $facultyCode = (string) TemplateGlobalSetting::get('kode_fakultas_nomor_surat', 'Ybk.041.10');
+        $classificationCode = $this->resolveClassificationCode($surat);
 
-        return sprintf('B/%04d/%s/FMIKOM/%s', $surat->id, $code, $year);
+        $sequenceKey = sprintf('FAKULTAS-%s', $year);
+        $urutan = NomorSuratSequence::nextUrutan($sequenceKey, $year, 0);
+
+        return sprintf(
+            '%s/%03d/%s/%s/%d',
+            $prefix,
+            $urutan,
+            $facultyCode,
+            $classificationCode,
+            $year
+        );
+    }
+
+    protected function resolveClassificationCode(Surat $surat): string
+    {
+        $classificationCode = trim((string) ($surat->jenisSurat?->kode_klasifikasi ?? ''));
+
+        if ($classificationCode === '') {
+            return 'SURAT';
+        }
+
+        return strtoupper($classificationCode);
     }
 
     protected function makeOutputPath(Surat $surat): string
@@ -191,8 +216,11 @@ class SuratDocumentGeneratorService
         $mpdf->WriteHTML("<style>{$styles} {$customCss}</style>", \Mpdf\HTMLParserMode::HEADER_CSS);
         $mpdf->WriteHTML($bodyHtml, \Mpdf\HTMLParserMode::HTML_BODY);
 
-        // QR Code
-        if (filled($viewPayload['qrCodeBase64'] ?? null)) {
+        // Tambahkan QR fixed hanya jika template belum merender QR sendiri.
+        if (
+            filled($viewPayload['qrCodeBase64'] ?? null)
+            && ! str_contains($bodyHtml, 'data-qr-embedded="true"')
+        ) {
             $qrCodeBase64 = e((string) $viewPayload['qrCodeBase64']);
             $mpdf->WriteHTML(<<<HTML
             <div style="position: fixed; bottom: 0; right: 0; text-align: right; width: 18mm;">

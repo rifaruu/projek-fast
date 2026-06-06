@@ -74,7 +74,7 @@ CSS;
     /**
      * @return array{template: SuratTemplate, html: string, placeholders: array<string, mixed>}
      */
-    public function renderForSurat(Surat $surat): array
+    public function renderForSurat(Surat $surat, bool $embedQrInTemplate = true): array
     {
         $surat->loadMissing([
             'pemohon',
@@ -95,7 +95,8 @@ CSS;
             $template,
             $placeholderValues,
             $surat->qr_token,
-            $suratFinished
+            $suratFinished,
+            $embedQrInTemplate
         );
 
         return [
@@ -224,7 +225,8 @@ CSS;
         SuratTemplate $template,
         array $placeholderValues,
         ?string $qrToken = null,
-        bool $suratFinished = false
+        bool $suratFinished = false,
+        bool $embedQrInTemplate = true
     ): array {//:string
         $body     = (string) ($template->template_body ?? '');
         $settings = \App\Models\TemplateGlobalSetting::allAsArray();
@@ -243,7 +245,8 @@ CSS;
         }
 
         $placeholderValues['__qr_svg']    = $qrSvg;
-        $placeholderValues['__qr_active'] = $qrActive;
+        $placeholderValues['__qr_active'] = $qrActive && $embedQrInTemplate;
+        $placeholderValues['__qr_hidden'] = ! $embedQrInTemplate;
 
         // ── Render body ────────────────────────────────────────────────────
         if (\App\Services\SuratKomponenRenderer::isKomponenJson($body)) {
@@ -282,7 +285,13 @@ CSS;
                 new \BaconQrCode\Renderer\Image\SvgImageBackEnd()
             );
             $writer = new \BaconQrCode\Writer($renderer);
-            return $writer->writeString($content);
+            $svg = $writer->writeString($content);
+
+            // Deklarasi XML membuat sebagian renderer PDF menampilkannya
+            // sebagai teks mentah saat SVG di-inline ke HTML.
+            $svg = preg_replace('/^\s*<\?xml[^>]+>\s*/i', '', $svg) ?? $svg;
+
+            return trim($svg);
         } catch (\Throwable $e) {
             return '';
         }
@@ -296,7 +305,30 @@ CSS;
     public function resolvePlaceholderValues(Surat $surat, SuratTemplate $template): array
     {
         $suratData = $this->extractSuratData($surat);
-        $payload   = [];
+        $payload   = $this->buildImplicitPlaceholderPayload(
+            $suratData,
+            [
+                'surat' => [
+                    'nomor_surat' => $surat->nomor_surat,
+                    'keperluan' => $surat->keperluan,
+                    'status' => $surat->status,
+                    'tanggal_pengajuan' => $surat->tanggal_pengajuan,
+                    'tanggal_kebutuhan' => $surat->tanggal_kebutuhan,
+                    'tanggal_selesai' => $surat->tanggal_selesai,
+                    'generated_at' => $surat->generated_at,
+                ],
+                'user' => [
+                    'name' => $surat->pemohon?->name,
+                    'email' => $surat->pemohon?->email,
+                    'nim_nip' => $surat->pemohon?->nim_nip,
+                    'nomor_induk' => $surat->pemohon?->nomor_induk,
+                    'no_telepon' => $surat->pemohon?->no_telepon,
+                    'programStudi' => [
+                        'nama' => $surat->pemohon?->programStudi?->nama,
+                    ],
+                ],
+            ]
+        );
 
         foreach ($template->placeholders as $placeholder) {
             $key       = (string) $placeholder->placeholder_key;
@@ -328,7 +360,7 @@ CSS;
 
         $suratContext = Arr::get($context, 'surat', []);
         $userContext  = Arr::get($context, 'user', []);
-        $payload      = [];
+        $payload      = $this->buildImplicitPlaceholderPayload($data, $context);
 
         foreach ($template->placeholders as $placeholder) {
             $key       = (string) $placeholder->placeholder_key;
@@ -347,6 +379,90 @@ CSS;
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    protected function buildImplicitPlaceholderPayload(array $data, array $context = []): array
+    {
+        $suratContext = Arr::get($context, 'surat', []);
+        $userContext  = Arr::get($context, 'user', []);
+
+        $payload = [
+            ...$this->flattenContextPlaceholders($data),
+            ...$this->flattenContextPlaceholders($suratContext),
+            ...$this->flattenContextPlaceholders($userContext),
+        ];
+
+        $aliases = [
+            'nama_pemohon' => Arr::get($data, 'nama')
+                ?? Arr::get($data, 'nama_pemohon')
+                ?? Arr::get($userContext, 'name'),
+            'nama' => Arr::get($data, 'nama')
+                ?? Arr::get($data, 'nama_pemohon')
+                ?? Arr::get($userContext, 'name'),
+            'nim' => Arr::get($data, 'nim')
+                ?? Arr::get($data, 'nik')
+                ?? Arr::get($userContext, 'nim_nip')
+                ?? Arr::get($userContext, 'nomor_induk'),
+            'nik' => Arr::get($data, 'nik')
+                ?? Arr::get($data, 'nim')
+                ?? Arr::get($userContext, 'nim_nip')
+                ?? Arr::get($userContext, 'nomor_induk'),
+            'nomor_induk' => Arr::get($data, 'nomor_induk')
+                ?? Arr::get($data, 'nim')
+                ?? Arr::get($data, 'nik')
+                ?? Arr::get($userContext, 'nomor_induk')
+                ?? Arr::get($userContext, 'nim_nip'),
+            'program_studi' => Arr::get($data, 'program_studi')
+                ?? Arr::get($userContext, 'programStudi.nama'),
+            'lahir' => Arr::get($data, 'lahir')
+                ?? Arr::get($data, 'tempat_tanggal_lahir'),
+            'tanggal_surat' => Arr::get($context, 'tanggal_surat'),
+            'tanggal_surat_panjang' => $this->resolveComputedPreviewValue($data, $context, 'tanggal_surat_panjang'),
+            'kota_surat' => Arr::get($context, 'kota_surat', $this->resolveSystemValue('kota_surat')),
+        ];
+
+        foreach ($aliases as $key => $value) {
+            if (filled($value) || ! array_key_exists($key, $payload)) {
+                $payload[$key] = $this->normalizePlaceholderValue($key, $value, $payload[$key] ?? '');
+            }
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @return array<string, mixed>
+     */
+    protected function flattenContextPlaceholders(array $source, string $prefix = ''): array
+    {
+        $flattened = [];
+
+        foreach ($source as $key => $value) {
+            if (! is_string($key) || $key === '') {
+                continue;
+            }
+
+            $flatKey = $prefix === '' ? $key : $prefix . '.' . $key;
+
+            if (is_array($value)) {
+                $flattened += $this->flattenContextPlaceholders($value, $flatKey);
+                continue;
+            }
+
+            $flattened[$flatKey] = $this->normalizePlaceholderValue($flatKey, $value, '');
+
+            if ($prefix === '') {
+                $flattened[$key] = $this->normalizePlaceholderValue($key, $value, '');
+            }
+        }
+
+        return $flattened;
     }
 
     // ── Extract surat data ─────────────────────────────────────────────────
@@ -473,9 +589,11 @@ CSS;
             // Skip internal keys (QR data)
             if (str_starts_with((string) $key, '__')) continue;
 
+            $escapedValue = nl2br(e((string) $value), false);
+
             $content = str_replace(
-                '{{' . $key . '}}',
-                nl2br(e((string) $value), false),
+                ['{{' . $key . '}}', '{{ ' . $key . ' }}'],
+                $escapedValue,
                 $content
             );
         }

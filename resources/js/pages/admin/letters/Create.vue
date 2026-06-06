@@ -32,7 +32,6 @@ const filtered = computed(() => {
     if (q) {
         list = list.filter(j =>
             j.nama.toLowerCase().includes(q) ||
-            (j.kode_surat ?? '').toLowerCase().includes(q) ||
             (j.category?.nama ?? '').toLowerCase().includes(q) ||
             (j.deskripsi ?? '').toLowerCase().includes(q)
         );
@@ -174,9 +173,6 @@ function submit() {
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
                                     <p class="truncate text-sm font-semibold text-slate-900">{{ jenis.nama }}</p>
-                                    <span v-if="jenis.kode_surat" class="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
-                                        {{ jenis.kode_surat }}
-                                    </span>
                                 </div>
                                 <div class="mt-0.5 flex items-center gap-2">
                                     <p class="text-xs text-slate-400">{{ jenis.category?.nama ?? 'Tanpa Kategori' }}</p>
@@ -204,7 +200,6 @@ function submit() {
                         <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                             <p class="text-xs font-medium text-emerald-600">{{ selected.category?.nama ?? 'Tanpa Kategori' }}</p>
                             <p class="mt-1 text-sm font-bold text-slate-900">{{ selected.nama }}</p>
-                            <p v-if="selected.kode_surat" class="mt-0.5 font-mono text-xs text-slate-400">{{ selected.kode_surat }}</p>
                             <p v-if="selected.deskripsi" class="mt-2 text-xs leading-5 text-slate-500">{{ selected.deskripsi }}</p>
                         </div>
 

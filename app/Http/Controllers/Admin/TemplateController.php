@@ -18,14 +18,45 @@ use Inertia\Response;
 
 class TemplateController extends Controller
 {
+    protected const DEFAULT_GLOBAL_SETTINGS = [
+        [
+            'key'   => 'kode_prefix_nomor_surat',
+            'label' => 'Prefix Nomor Surat',
+            'value' => 'B',
+            'tipe'  => 'text',
+        ],
+        [
+            'key'   => 'kode_fakultas_nomor_surat',
+            'label' => 'Kode Fakultas Nomor Surat',
+            'value' => 'Ybk.041.10',
+            'tipe'  => 'text',
+        ],
+    ];
+
     public function __construct(
         protected SuratTemplateRendererService $templateRenderer,
     ) {
     }
 
+    protected function ensureGlobalSettingsExist(): void
+    {
+        foreach (self::DEFAULT_GLOBAL_SETTINGS as $setting) {
+            TemplateGlobalSetting::firstOrCreate(
+                ['key' => $setting['key']],
+                [
+                    'label' => $setting['label'],
+                    'value' => $setting['value'],
+                    'tipe'  => $setting['tipe'],
+                ]
+            );
+        }
+    }
+
     // ── Index ─────────────────────────────────────────────────────────────────
     public function index(Request $request): Response
     {
+        $this->ensureGlobalSettingsExist();
+
         $jenisSurats = JenisSurat::query()
             ->with(['category', 'template'])
             ->orderBy('nama')
@@ -71,6 +102,7 @@ class TemplateController extends Controller
         $validated = $request->validate([
             'nama'             => ['required', 'string', 'max:255'],
             'kode_surat'       => ['nullable', 'string', 'max:50'],
+            'kode_klasifikasi' => ['nullable', 'string', 'max:50'],
             'category_id'      => ['nullable', 'exists:surat_categories,id'],
             'deskripsi'        => ['nullable', 'string'],
             'allowed_role_id'  => ['nullable', 'exists:roles,id'],
@@ -83,6 +115,7 @@ class TemplateController extends Controller
             'nama'             => $validated['nama'],
             'slug'             => Str::slug($validated['nama']) . '-' . time(),
             'kode_surat'       => $validated['kode_surat'] ?? null,
+            'kode_klasifikasi' => $validated['kode_klasifikasi'] ?? null,
             'category_id'      => $validated['category_id'] ?? null,
             'deskripsi'        => $validated['deskripsi'] ?? null,
             'allowed_role_id'  => $validated['allowed_role_id'] ?? null,
@@ -115,6 +148,7 @@ class TemplateController extends Controller
         // ── Update meta jenis surat ────────────────────────────────────────
         $meta = [];
         if ($request->has('kode_surat'))      $meta['kode_surat']       = $request->input('kode_surat');
+        if ($request->has('kode_klasifikasi'))$meta['kode_klasifikasi'] = $request->input('kode_klasifikasi') ?: null;
         if ($request->has('category_id'))     $meta['category_id']      = $request->input('category_id') ?: null;
         if ($request->has('approval_role_id'))$meta['approval_role_id'] = $request->input('approval_role_id') ?: null;
         if ($request->has('allowed_role_id')) $meta['allowed_role_id']  = $request->input('allowed_role_id') ?: null;
@@ -260,6 +294,7 @@ class TemplateController extends Controller
         $baru->nama       = $jenisSurat->nama . ' (Salinan)';
         $baru->slug       = Str::slug($baru->nama) . '-' . time();
         $baru->kode_surat = $jenisSurat->kode_surat ? $jenisSurat->kode_surat . '-COPY' : null;
+        $baru->kode_klasifikasi = $jenisSurat->kode_klasifikasi;
         $baru->is_active  = false;
         $baru->save();
 
@@ -287,6 +322,7 @@ class TemplateController extends Controller
             'nama'           => $jenisSurat->nama,
             'slug'           => $jenisSurat->slug,
             'kode_surat'     => $jenisSurat->kode_surat,
+            'kode_klasifikasi' => $jenisSurat->kode_klasifikasi,
             'deskripsi'      => $jenisSurat->deskripsi,
             'is_active'      => $jenisSurat->is_active,
             'perlu_approval' => $jenisSurat->perlu_approval,

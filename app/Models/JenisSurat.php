@@ -15,6 +15,7 @@ class JenisSurat extends Model
         'nama',
         'slug',
         'kode_surat',
+        'kode_klasifikasi',
         'deskripsi',
         'field_config',
         'template_file_path',
