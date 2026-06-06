@@ -236,7 +236,8 @@ CSS;
         if (!empty($qrToken)) {
             $qrActive = $suratFinished;
             if ($qrActive) {
-                $verifyUrl = url('/verifikasi-qr/' . $qrToken);
+                $baseUrl = config('app.url') ?? 'http://localhost';
+                $verifyUrl = rtrim((string) $baseUrl, '/') . '/verifikasi-qr/' . $qrToken;
                 $qrSvg     = static::generateQrSvg($verifyUrl);
             }
         }
