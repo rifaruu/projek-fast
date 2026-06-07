@@ -29,26 +29,26 @@ const props = defineProps<{
     surats: PaginatedSurats;
     summary: Summary;
     recentHistory: HistoryItem[];
-    filters: { status?: string; search?: string; jenis_surat_id?: string };
-    jenisSurats: Array<{ id: number; nama: string }>;
+    filters: { status?: string; search?: string; category_id?: string };
+    categories: Array<{ id: number; nama: string }>;
 }>();
 
 const search = ref(props.filters.search ?? '');
 const status = ref(props.filters.status ?? '');
-const jenisSuratId = ref(props.filters.jenis_surat_id ?? '');
+const categoryId = ref(props.filters.category_id ?? '');
 
 function applyFilter() {
     router.get('/admin/dashboard', {
         search: search.value || undefined,
         status: status.value || undefined,
-        jenis_surat_id: jenisSuratId.value || undefined,
+        category_id: categoryId.value || undefined,
     }, { preserveState: true, replace: true });
 }
 
 function resetFilter() {
     search.value = '';
     status.value = '';
-    jenisSuratId.value = '';
+    categoryId.value = '';
     applyFilter();
 }
 
@@ -85,7 +85,7 @@ function submitReject() {
 
 const statCards = computed(() => [
     { label: 'Total Surat', value: props.summary.total, icon: FileText, color: 'indigo', delta: '+8 bulan ini' },
-    { label: 'Menunggu Proses', value: props.summary.pending + props.summary.validated, icon: Clock3, color: 'amber', delta: 'perlu tindakan' },
+    { label: 'Pengajuan Perlu Diproses', value: props.summary.pending + props.summary.validated, icon: Clock3, color: 'amber', delta: 'perlu tindakan' },
     { label: 'Selesai', value: props.summary.finished, icon: CheckCircle2, color: 'emerald', delta: '+5 minggu ini' },
     { label: 'Ditolak', value: props.summary.rejected, icon: XCircle, color: 'red', delta: 'perlu revisi' },
 ]);
@@ -139,7 +139,7 @@ function historyColor(action: string) {
 <template>
     <AdminLayout
         title="Dashboard"
-        subtitle="Monitoring pengajuan surat"
+        subtitle="Monitoring pengajuan masuk dan surat keluar"
         active-menu="dashboard"
     >
         <Head title="Dashboard Admin" />
@@ -180,12 +180,12 @@ function historyColor(action: string) {
                 <!-- Toolbar -->
                 <div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h2 class="text-sm font-semibold text-slate-900">Daftar Pengajuan Surat</h2>
+                        <h2 class="text-sm font-semibold text-slate-900">Daftar Pengajuan Masuk</h2>
                         <p class="text-xs text-slate-400 mt-0.5">{{ surats.from ?? 0 }}–{{ surats.to ?? 0 }} dari {{ surats.total }}</p>
                     </div>
                     <Link href="/admin/surat/create" class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors shrink-0">
                         <FilePlus2 class="size-3.5" />
-                        Buat Surat
+                        Buat Surat Keluar
                     </Link>
                 </div>
 
@@ -206,9 +206,9 @@ function historyColor(action: string) {
                         <option value="finished">Selesai</option>
                         <option value="rejected">Ditolak</option>
                     </select>
-                    <select v-model="jenisSuratId" class="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none focus:border-emerald-400">
-                        <option value="">Semua Jenis</option>
-                        <option v-for="j in jenisSurats" :key="j.id" :value="String(j.id)">{{ j.nama }}</option>
+                    <select v-model="categoryId" class="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none focus:border-emerald-400">
+                        <option value="">Semua Kategori</option>
+                        <option v-for="category in categories" :key="category.id" :value="String(category.id)">{{ category.nama }}</option>
                     </select>
                     <button type="button" class="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors" @click="applyFilter">Terapkan</button>
                     <button type="button" class="h-8 rounded-lg border border-slate-200 px-3 text-xs text-slate-500 hover:bg-slate-50 transition-colors" @click="resetFilter">Reset</button>

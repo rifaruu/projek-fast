@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\JenisSurat;
+use App\Models\SuratCategory;
 use App\Models\Surat;
 use App\Models\SuratLampiran;
 use App\Services\FastApprovalWorkflowService;
@@ -31,14 +32,16 @@ class DashboardController extends Controller
 
         $status = $request->string('status')->toString();
         $search = $request->string('search')->trim()->toString();
-        $jenisSuratId = $request->integer('jenis_surat_id');
+        $categoryId = $request->integer('category_id');
 
         if ($status !== '') {
             $query->where('status', $status);
         }
 
-        if ($jenisSuratId > 0) {
-            $query->where('jenis_surat_id', $jenisSuratId);
+        if ($categoryId > 0) {
+            $query->whereHas('jenisSurat', function ($jenisSuratQuery) use ($categoryId): void {
+                $jenisSuratQuery->where('category_id', $categoryId);
+            });
         }
 
         if ($search !== '') {
@@ -122,14 +125,15 @@ class DashboardController extends Controller
             'filters' => [
                 'status' => $status,
                 'search' => $search,
-                'jenis_surat_id' => $jenisSuratId > 0 ? (string) $jenisSuratId : '',
+                'category_id' => $categoryId > 0 ? (string) $categoryId : '',
             ],
-            'jenisSurats' => JenisSurat::query()
+            'categories' => SuratCategory::query()
+                ->orderBy('urutan')
                 ->orderBy('nama')
                 ->get(['id', 'nama'])
-                ->map(fn(JenisSurat $jenisSurat): array => [
-                    'id' => $jenisSurat->id,
-                    'nama' => $jenisSurat->nama,
+                ->map(fn(SuratCategory $category): array => [
+                    'id' => $category->id,
+                    'nama' => $category->nama,
                 ])
                 ->values(),
             'recentHistory' => $recentHistory, // ← TAMBAHAN 1
@@ -168,7 +172,11 @@ class DashboardController extends Controller
                 && $surat->latestRevisionRequestFlow() !== null,
             'previewTemplateUrl' => route('documents.surat.template-preview', $surat->id, absolute: false),
             'generatedDocumentUrl' => filled($surat->nomor_surat) || filled($surat->rendered_snapshot)
-                ? route('documents.surat.generated-document', $surat->id, absolute: false)
+                ? (
+                    $surat->status === Surat::STATUS_FINISHED
+                        ? route('documents.surat.pdf', $surat->id, absolute: false)
+                        : route('documents.surat.generated-document', $surat->id, absolute: false)
+                )
                 : null,
         ]);
     }
@@ -237,6 +245,7 @@ class DashboardController extends Controller
         $surat = Surat::query()
             ->with(['pemohon', 'jenisSurat.template.placeholders', 'dataEntries'])
             ->findOrFail($id);
+        $refresh = $request->boolean('refresh');
 
         $filename = sprintf(
             '%s-%d.pdf',
@@ -245,6 +254,21 @@ class DashboardController extends Controller
         );
 
         // Jika sudah ada file PDF tersimpan → serve langsung
+        if ($refresh) {
+            abort_if($user === null, 403);
+
+            $generated = app(\App\Services\SuratDocumentGeneratorService::class)->generate($surat);
+
+            return \Illuminate\Support\Facades\Storage::disk('public')->response(
+                $generated->generated_file_path,
+                $filename,
+                [
+                    'Content-Type'        => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
+                ],
+            );
+        }
+
         if (
             filled($surat->generated_file_path) &&
             \Illuminate\Support\Facades\Storage::disk('public')->exists($surat->generated_file_path)

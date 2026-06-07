@@ -78,10 +78,10 @@ const navGroups = computed(() => {
         groups.push({
             title: 'Surat',
             items: [
-                { key: 'letters.create', label: 'Buat Surat',      href: '/admin/surat/create', icon: FilePlus2 },
-                { key: 'letters.index',  label: 'Semua Pengajuan',  href: '/admin/surat',        icon: ClipboardList, badge: notifCount.value || undefined, badgeColor: 'amber' },
-                { key: 'history',        label: 'Riwayat Surat',    href: '/admin/history',      icon: History },
-                { key: 'archive',        label: 'Arsip & Unduh',    href: '/admin/archive',      icon: Archive },
+                { key: 'letters.create', label: 'Buat Surat', href: '/admin/surat/create', icon: FilePlus2 },
+                { key: 'letters.index',  label: 'Pengajuan Masuk',   href: '/admin/surat',        icon: ClipboardList, badge: notifCount.value || undefined, badgeColor: 'amber' },
+                { key: 'history',        label: 'Riwayat Surat Keluar', href: '/admin/history',  icon: History },
+                { key: 'archive',        label: 'Arsip Surat Keluar', href: '/admin/archive',    icon: Archive },
             ],
         });
         groups.push({

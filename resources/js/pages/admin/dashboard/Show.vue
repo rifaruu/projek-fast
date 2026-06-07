@@ -59,14 +59,15 @@ function openPreviewTemplate() {
 
 function openPreviewDocument() {
     if (!props.generatedDocumentUrl) return;
-    viewerUrl.value   = props.generatedDocumentUrl;
+    const isPdfDocument = props.generatedDocumentUrl.endsWith('/pdf');
+    viewerUrl.value   = isPdfDocument ? `${props.generatedDocumentUrl}?refresh=1` : props.generatedDocumentUrl;
     viewerTitle.value = `${props.jenis_surat} — ${props.nomor_surat ?? ''}`;
-    viewerType.value  = 'html';
+    viewerType.value  = isPdfDocument ? 'pdf' : 'html';
     viewerOpen.value  = true;
 }
 
 function openDownloadPdf() {
-    viewerUrl.value   = `/admin/surat/${props.id}/pdf`;
+    viewerUrl.value   = `/admin/surat/${props.id}/pdf?refresh=1`;
     viewerTitle.value = `${props.jenis_surat} — ${props.nomor_surat ?? ''}`;
     viewerType.value  = 'pdf';
     viewerOpen.value  = true;

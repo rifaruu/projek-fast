@@ -63,12 +63,12 @@ function submit() {
 
 <template>
     <AdminLayout
-        title="Buat Surat"
-        subtitle="Pilih jenis surat yang akan dibuat"
+        title="Buat Surat Keluar"
+        subtitle="Pilih jenis surat keluar yang akan dibuat"
         active-menu="letters.create"
-        :breadcrumbs="[{ label: 'Buat Surat' }]"
+        :breadcrumbs="[{ label: 'Buat Surat Keluar' }]"
     >
-        <Head title="Buat Surat" />
+        <Head title="Buat Surat Keluar" />
 
         <!-- Step indicator -->
         <div class="mb-6 flex items-center gap-0 rounded-2xl border border-slate-200 bg-white px-6 py-4">

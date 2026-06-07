@@ -74,7 +74,7 @@ CSS;
     /**
      * @return array{template: SuratTemplate, html: string, placeholders: array<string, mixed>}
      */
-    public function renderForSurat(Surat $surat, bool $embedQrInTemplate = true): array
+    public function renderForSurat(Surat $surat, bool $embedQrInTemplate = true, string $renderMode = 'preview'): array
     {
         $surat->loadMissing([
             'pemohon',
@@ -96,7 +96,8 @@ CSS;
             $placeholderValues,
             $surat->qr_token,
             $suratFinished,
-            $embedQrInTemplate
+            $embedQrInTemplate,
+            $renderMode
         );
 
         return [
@@ -124,7 +125,7 @@ CSS;
         $placeholderValues = $this->resolvePreviewPlaceholderValues($template, $data, $context);
 
         // Preview: QR tidak aktif — tampilkan placeholder
-        $html = $this->renderTemplate($template, $placeholderValues, null, false);
+        $html = $this->renderTemplate($template, $placeholderValues, null, false, true, 'preview');
 
         return [
             'template'     => $template,
@@ -159,7 +160,7 @@ CSS;
             ->all();
 
         // Preview admin: QR placeholder
-        $html = $this->renderTemplate($template, $placeholderValues, null, false);
+        $html = $this->renderTemplate($template, $placeholderValues, null, false, true, 'preview');
 
         return [
             'template'     => $template,
@@ -226,7 +227,8 @@ CSS;
         array $placeholderValues,
         ?string $qrToken = null,
         bool $suratFinished = false,
-        bool $embedQrInTemplate = true
+        bool $embedQrInTemplate = true,
+        string $renderMode = 'preview'
     ): array {//:string
         $body     = (string) ($template->template_body ?? '');
         $settings = \App\Models\TemplateGlobalSetting::allAsArray();
@@ -247,6 +249,7 @@ CSS;
         $placeholderValues['__qr_svg']    = $qrSvg;
         $placeholderValues['__qr_active'] = $qrActive && $embedQrInTemplate;
         $placeholderValues['__qr_hidden'] = ! $embedQrInTemplate;
+        $placeholderValues['__render_mode'] = $renderMode;
 
         // ── Render body ────────────────────────────────────────────────────
         if (\App\Services\SuratKomponenRenderer::isKomponenJson($body)) {

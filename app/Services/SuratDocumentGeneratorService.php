@@ -39,7 +39,7 @@ class SuratDocumentGeneratorService
             ])->save();
         }
 
-        $rendered     = $this->renderer->renderForSurat($surat->fresh(), false);
+        $rendered     = $this->renderer->renderForSurat($surat->fresh(), false, 'pdf');
         $outputPath   = $this->makeOutputPath($surat);
         $freshSurat   = $surat->fresh(['jenisSurat']);
         $qrCodeBase64 = $this->makeQrCodeBase64($freshSurat);
@@ -223,9 +223,11 @@ class SuratDocumentGeneratorService
         ) {
             $qrCodeBase64 = e((string) $viewPayload['qrCodeBase64']);
             $mpdf->WriteHTML(<<<HTML
-            <div style="position: fixed; bottom: 0; right: 0; text-align: right; width: 18mm;">
-                <p style="color: #475569; font-size: 6pt; letter-spacing: 0.04em; margin-bottom: 1px; text-transform: uppercase;">Validasi Dokumen</p>
-                <img src="{$qrCodeBase64}" style="height: 15mm; width: 15mm;">
+            <div style="position: fixed; bottom: 2mm; right: 0; width: 22mm; text-align: center;">
+                <p style="color: #64748B; font-size: 5.5pt; font-weight: bold; letter-spacing: 0.02em; line-height: 1.15; margin: 0 0 1.2mm 0; text-transform: uppercase;">
+                    Validasi<br>Dokumen
+                </p>
+                <img src="{$qrCodeBase64}" style="display: block; height: 16mm; width: 16mm; margin: 0 auto;">
             </div>
             HTML);
         }

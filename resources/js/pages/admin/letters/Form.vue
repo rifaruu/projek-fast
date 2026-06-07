@@ -115,7 +115,7 @@ const hasRequiredFields = computed(() =>
         :subtitle="`${jenisSurat.category?.nama ?? 'Surat'} — ${jenisSurat.nama}`"
         active-menu="letters.create"
         :breadcrumbs="[
-            { label: 'Buat Surat', href: '/admin/surat/create' },
+            { label: 'Buat Surat Keluar', href: '/admin/surat/create' },
             { label: 'Isi Form' },
         ]"
     >

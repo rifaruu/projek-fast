@@ -366,6 +366,8 @@ HTML;
         if (empty($kolom)) return '';
         $size   = $komp['font_size'] ?? '11pt';
         $jumlah = count($kolom);
+        $renderMode = $data['__render_mode'] ?? 'preview';
+        $signatureGap = $renderMode === 'pdf' ? '30mm' : '32mm';
 
         // ── QR Code ────────────────────────────────────────────────────
         $qrSvg    = $data['__qr_svg'] ?? '';
@@ -415,9 +417,22 @@ HTML;
             $textAlign = $alignMap[$i] ?? 'center';
             $ttdCols  .= <<<HTML
 <td style="vertical-align: top; text-align: {$textAlign}; padding: 0 8px 0 0; font-size: {$size};">
-    <p style="margin: 0 0 90px 0;">{$jabatan}</p>
-    <p style="margin: 0; font-weight: bold;">{$nama}</p>
-    <p style="margin: 0;">{$nik}</p>
+    <table style="display: inline-table; width: 54mm; border-collapse: collapse; text-align: {$textAlign};">
+        <tbody>
+            <tr>
+                <td style="padding: 0; text-align: {$textAlign};">{$jabatan}</td>
+            </tr>
+            <tr>
+                <td style="height: {$signatureGap}; padding: 0; font-size: 1pt; line-height: 1;">&nbsp;</td>
+            </tr>
+            <tr>
+                <td style="padding: 0; font-weight: bold; text-align: {$textAlign};">{$nama}</td>
+            </tr>
+            <tr>
+                <td style="padding: 1.5mm 0 0 0; text-align: {$textAlign};">{$nik}</td>
+            </tr>
+        </tbody>
+    </table>
 </td>
 HTML;
         }
@@ -430,7 +445,7 @@ HTML;
             </td>
             HTML;
 
-        return <<<HTML
+return <<<HTML
 <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: {$size};">
     <tbody>
         <tr>
@@ -438,7 +453,6 @@ HTML;
             {$qrColumnHtml}
         </tr>
     </tbody>
-    <div style="height: 35mm; display: block;"></div>
 </table>
 HTML;
     }

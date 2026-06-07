@@ -64,12 +64,12 @@ function statusClass(s: string) {
 
 <template>
     <AdminLayout
-        title="Riwayat Surat"
-        subtitle="Surat yang dibuat oleh admin"
+        title="Riwayat Surat Keluar"
+        subtitle="Daftar surat keluar yang dibuat oleh admin"
         active-menu="history"
-        :breadcrumbs="[{ label: 'Riwayat Surat' }]"
+        :breadcrumbs="[{ label: 'Riwayat Surat Keluar' }]"
     >
-        <Head title="Riwayat Surat" />
+        <Head title="Riwayat Surat Keluar" />
 
         <!-- Filter bar -->
         <div class="mb-5 rounded-2xl border border-slate-200 bg-white p-4">

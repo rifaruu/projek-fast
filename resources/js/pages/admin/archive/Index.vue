@@ -57,12 +57,12 @@ function formatDate(d?: string | null) {
 
 <template>
     <AdminLayout
-        title="Arsip & Unduh"
-        subtitle="Surat yang sudah selesai dan siap diunduh"
+        title="Arsip Surat Keluar"
+        subtitle="Surat keluar yang sudah selesai dan siap diunduh"
         active-menu="archive"
-        :breadcrumbs="[{ label: 'Arsip & Unduh' }]"
+        :breadcrumbs="[{ label: 'Arsip Surat Keluar' }]"
     >
-        <Head title="Arsip & Unduh" />
+        <Head title="Arsip Surat Keluar" />
 
         <!-- Tabel -->
         <div class="rounded-2xl border border-slate-200 bg-white overflow-hidden">

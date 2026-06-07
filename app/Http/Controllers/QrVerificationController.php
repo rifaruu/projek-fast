@@ -25,7 +25,7 @@ class QrVerificationController extends Controller
     public function verify(Request $request, string $token): Response
     {
         $surat = Surat::where('qr_token', $token)
-            ->with(['pemohon.programStudi', 'jenisSurat.category'])
+            ->with(['pemohon.programStudi', 'jenisSurat.category', 'approvedBy', 'approvalFlows.approver'])
             ->first();
 
         if (! $surat) {
@@ -64,6 +64,23 @@ class QrVerificationController extends Controller
                 'program_studi' => $surat->pemohon?->programStudi?->nama,
                 'keperluan' => $surat->keperluan,
                 'tanggal_terbit' => $surat->generated_at?->toISOString(),
+                'disahkan_oleh' => $surat->finalApprovalRoleSlug() === 'dekan'
+                    ? 'Dekan'
+                    : ($surat->finalApprovalRoleSlug() === 'kaprodi' ? 'Kaprodi' : 'Admin'),
+                'nama_approver' => $surat->approvedBy?->name
+                    ?? optional(
+                        $surat->approvalFlows
+                            ->where('status', 'approved')
+                            ->sortByDesc(fn ($flow) => $flow->approved_at?->getTimestamp() ?? 0)
+                            ->first()
+                    )?->approver?->name,
+                'tanggal_persetujuan_final' => $surat->approved_at?->toISOString()
+                    ?? optional(
+                        $surat->approvalFlows
+                            ->where('status', 'approved')
+                            ->sortByDesc(fn ($flow) => $flow->approved_at?->getTimestamp() ?? 0)
+                            ->first()
+                    )?->approved_at?->toISOString(),
                 'status' => $isRevoked ? 'dicabut' : ($isValidated ? 'valid' : 'belum_divalidasi'),
             ],
         ]);
