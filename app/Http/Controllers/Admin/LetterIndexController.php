@@ -18,13 +18,16 @@ class LetterIndexController extends Controller
         $status       = $request->string('status')->toString();
         $jenisSuratId = $request->integer('jenis_surat_id');
 
-        $query = Surat::query()
+        $baseQuery = Surat::query()
             ->with(['pemohon', 'jenisSurat.category'])
+            ->where('type', 'pengajuan')
+            ->whereIn('status', [
+                Surat::STATUS_PENDING,
+                Surat::STATUS_REVISION_REQUESTED,
+            ])
             ->latest();
 
-        if ($status !== '') {
-            $query->where('status', $status);
-        }
+        $query = clone $baseQuery;
 
         if ($jenisSuratId > 0) {
             $query->where('jenis_surat_id', $jenisSuratId);
@@ -46,6 +49,14 @@ class LetterIndexController extends Controller
                 'id'               => $surat->id,
                 'nomor_surat'      => $surat->nomor_surat,
                 'status'           => $surat->status,
+                'revision_label'   => $surat->status === Surat::STATUS_REVISION_REQUESTED
+                    ? match ($surat->finalApprovalRoleSlug()) {
+                        'kaprodi' => 'Dikembalikan Kaprodi',
+                        'dekan' => 'Dikembalikan Dekan',
+                        default => 'Dikembalikan untuk Revisi',
+                    }
+                    : null,
+                'can_edit'         => $surat->status === Surat::STATUS_REVISION_REQUESTED,
                 'keperluan'        => $surat->keperluan,
                 'tanggal_pengajuan' => $surat->tanggal_pengajuan?->toISOString(),
                 'tanggal_selesai'  => $surat->tanggal_selesai?->toISOString(),
@@ -67,10 +78,10 @@ class LetterIndexController extends Controller
             'filters'    => compact('search', 'status') + ['jenis_surat_id' => $jenisSuratId > 0 ? (string) $jenisSuratId : ''],
             'jenisSurats' => JenisSurat::orderBy('nama')->get(['id', 'nama']),
             'summary'    => [
-                'total'    => Surat::count(),
-                'pending'  => Surat::where('status', Surat::STATUS_PENDING)->count(),
-                'finished' => Surat::where('status', Surat::STATUS_FINISHED)->count(),
-                'rejected' => Surat::where('status', Surat::STATUS_REJECTED)->count(),
+                'total'    => (clone $baseQuery)->count(),
+                'pending'  => (clone $baseQuery)->where('status', Surat::STATUS_PENDING)->count(),
+                'finished' => 0,
+                'rejected' => 0,
             ],
         ]);
     }

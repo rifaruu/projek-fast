@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // resources/js/pages/admin/letters/Index.vue
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
-import { FilePlus2, Eye, Download, CheckCircle2, XCircle, Search, Filter } from 'lucide-vue-next';
+import { FilePlus2, Eye, CheckCircle2, Search, XCircle, AlertTriangle, X, FileEdit } from 'lucide-vue-next';
 
 type SuratItem = {
     id: number; status: string;
+    revision_label?: string | null;
+    can_edit?: boolean;
     nomor_surat?: string | null; keperluan?: string | null;
     tanggal_pengajuan?: string | null; created_at?: string | null;
     tanggal_selesai?: string | null;
@@ -30,20 +32,42 @@ const props = defineProps<{
 }>();
 
 const search       = ref(props.filters.search ?? '');
-const status       = ref(props.filters.status ?? '');
 const jenisSuratId = ref(props.filters.jenis_surat_id ?? '');
 
 function applyFilter() {
     router.get('/admin/surat', {
         search:        search.value || undefined,
-        status:        status.value || undefined,
         jenis_surat_id: jenisSuratId.value || undefined,
     }, { preserveState: true, replace: true });
 }
 
 function resetFilter() {
-    search.value = ''; status.value = ''; jenisSuratId.value = '';
+    search.value = ''; jenisSuratId.value = '';
     applyFilter();
+}
+
+const rejectModalOpen = ref(false);
+const rejectTargetId = ref<number | null>(null);
+const rejectForm = useForm({ reason: '' });
+
+function openRejectModal(id: number) {
+    rejectTargetId.value = id;
+    rejectForm.reset();
+    rejectModalOpen.value = true;
+}
+
+function closeRejectModal() {
+    rejectModalOpen.value = false;
+    rejectTargetId.value = null;
+}
+
+function submitReject() {
+    if (rejectTargetId.value === null) return;
+
+    rejectForm.post(`/admin/surat/${rejectTargetId.value}/reject`, {
+        preserveScroll: true,
+        onSuccess: () => closeRejectModal(),
+    });
 }
 
 function formatDate(d?: string | null) {
@@ -51,18 +75,20 @@ function formatDate(d?: string | null) {
     return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d));
 }
 
-function statusLabel(s: string) {
+function statusLabel(item: SuratItem) {
     const map: Record<string, string> = {
         pending: 'Pending', validated_admin: 'Validasi Admin',
         approved_kaprodi: 'Disetujui Kaprodi', approved_dekan: 'Disetujui Dekan',
-        finished: 'Selesai', rejected: 'Ditolak',
+        revision_requested: item.revision_label ?? 'Dikembalikan untuk Revisi',
+        finished: 'Selesai', rejected_admin: 'Ditolak Admin', rejected_approver: 'Ditolak Pimpinan',
     };
-    return map[s] ?? s;
+    return map[item.status] ?? item.status;
 }
 
 function statusClass(s: string) {
     if (s === 'finished') return 'bg-emerald-100 text-emerald-700';
-    if (s === 'rejected') return 'bg-red-100 text-red-700';
+    if (s === 'revision_requested') return 'bg-amber-100 text-amber-700';
+    if (s === 'rejected_admin' || s === 'rejected_approver') return 'bg-red-100 text-red-700';
     if (s.startsWith('approved')) return 'bg-blue-100 text-blue-700';
     if (s === 'validated_admin') return 'bg-indigo-100 text-indigo-700';
     return 'bg-amber-100 text-amber-700';
@@ -72,7 +98,7 @@ function statusClass(s: string) {
 <template>
     <AdminLayout
         title="Pengajuan Masuk"
-        subtitle="Daftar pengajuan surat dari mahasiswa dan dosen"
+        subtitle="Permohonan user yang menunggu proses admin"
         active-menu="letters.index"
         :breadcrumbs="[{ label: 'Pengajuan Masuk' }]"
     >
@@ -86,19 +112,15 @@ function statusClass(s: string) {
         <Head title="Pengajuan Masuk" />
 
         <!-- Stat cards -->
-        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
             <div v-for="card in [
-                { label: 'Total Surat',    value: summary.total,    color: 'indigo' },
-                { label: 'Pending',        value: summary.pending,  color: 'amber' },
-                { label: 'Selesai',        value: summary.finished, color: 'emerald' },
-                { label: 'Ditolak',        value: summary.rejected, color: 'red' },
+                { label: 'Total Pengajuan', value: summary.total,   color: 'indigo' },
+                { label: 'Menunggu Proses', value: summary.pending, color: 'amber' },
             ]" :key="card.label"
                 class="rounded-2xl border bg-white p-5"
                 :class="{
                     'border-indigo-200': card.color === 'indigo',
                     'border-amber-200':  card.color === 'amber',
-                    'border-emerald-200': card.color === 'emerald',
-                    'border-red-200':    card.color === 'red',
                 }">
                 <p class="text-xs font-medium text-slate-400">{{ card.label }}</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ card.value }}</p>
@@ -112,20 +134,10 @@ function statusClass(s: string) {
             <div class="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-4">
                 <div class="relative">
                     <Search class="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-                    <input v-model="search" type="text" placeholder="Cari nama, NIM, nomor surat..."
+                    <input v-model="search" type="text" placeholder="Cari nama pemohon atau NIM..."
                         class="h-9 w-56 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none focus:border-emerald-400"
                         @keyup.enter="applyFilter" />
                 </div>
-                <select v-model="status"
-                    class="h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs outline-none focus:border-emerald-400">
-                    <option value="">Semua Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="validated_admin">Validasi Admin</option>
-                    <option value="approved_kaprodi">Disetujui Kaprodi</option>
-                    <option value="approved_dekan">Disetujui Dekan</option>
-                    <option value="finished">Selesai</option>
-                    <option value="rejected">Ditolak</option>
-                </select>
                 <select v-model="jenisSuratId"
                     class="h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs outline-none focus:border-emerald-400">
                     <option value="">Semua Jenis</option>
@@ -162,7 +174,7 @@ function statusClass(s: string) {
                     <tbody>
                         <tr v-if="surats.data.length === 0">
                             <td colspan="6" class="px-5 py-12 text-center text-sm text-slate-400">
-                                Belum ada data surat.
+                                Belum ada pengajuan user yang menunggu proses.
                             </td>
                         </tr>
                         <tr v-for="item in surats.data" :key="item.id"
@@ -183,7 +195,7 @@ function statusClass(s: string) {
                             </td>
                             <td class="px-5 py-3.5">
                                 <span class="rounded-full px-2 py-1 text-[10px] font-semibold" :class="statusClass(item.status)">
-                                    {{ statusLabel(item.status) }}
+                                    {{ statusLabel(item) }}
                                 </span>
                             </td>
                             <td class="px-5 py-3.5">
@@ -193,18 +205,23 @@ function statusClass(s: string) {
                                         title="Lihat Detail">
                                         <Eye class="size-3.5" />
                                     </Link>
-                                    <a v-if="item.status === 'finished'"
-                                        :href="`/admin/surat/${item.id}/pdf`"
-                                        target="_blank"
-                                        class="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-                                        title="Download PDF">
-                                        <Download class="size-3.5" />
-                                    </a>
-                                    <Link v-if="['pending','validated_admin'].includes(item.status)"
+                                    <Link v-if="item.status === 'pending'"
                                         :href="`/admin/surat/${item.id}`"
                                         class="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
                                         title="Proses">
                                         <CheckCircle2 class="size-3.5" />
+                                    </Link>
+                                    <button v-if="item.status === 'pending'" type="button"
+                                        class="grid size-7 place-items-center rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                        title="Tolak"
+                                        @click="openRejectModal(item.id)">
+                                        <XCircle class="size-3.5" />
+                                    </button>
+                                    <Link v-if="item.can_edit"
+                                        :href="`/admin/surat/${item.id}/edit`"
+                                        class="grid size-7 place-items-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
+                                        title="Edit & Teruskan">
+                                        <FileEdit class="size-3.5" />
                                     </Link>
                                 </div>
                             </td>
@@ -225,5 +242,49 @@ function statusClass(s: string) {
                     v-html="link.label" />
             </div>
         </div>
+
+        <Transition name="fade">
+            <div v-if="rejectModalOpen"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                @click.self="closeRejectModal">
+                <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+                    <div class="mb-4 flex items-center gap-3">
+                        <div class="grid size-10 shrink-0 place-items-center rounded-xl bg-red-50">
+                            <AlertTriangle class="size-5 text-red-500" />
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900">Tolak Pengajuan</h3>
+                            <p class="text-xs text-slate-400">Berikan komentar atau alasan penolakan untuk pemohon.</p>
+                        </div>
+                        <button type="button" class="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-100" @click="closeRejectModal">
+                            <X class="size-4" />
+                        </button>
+                    </div>
+
+                    <textarea
+                        v-model="rejectForm.reason"
+                        rows="4"
+                        placeholder="Jelaskan alasan penolakan..."
+                        class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 resize-none"
+                    />
+
+                    <p v-if="rejectForm.errors.reason" class="mt-1 text-xs text-red-500">{{ rejectForm.errors.reason }}</p>
+
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button"
+                            class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                            @click="closeRejectModal">
+                            Batal
+                        </button>
+                        <button type="button"
+                            class="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                            :disabled="rejectForm.processing || !rejectForm.reason.trim()"
+                            @click="submitReject">
+                            {{ rejectForm.processing ? 'Memproses...' : 'Tolak Pengajuan' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
     </AdminLayout>
 </template>

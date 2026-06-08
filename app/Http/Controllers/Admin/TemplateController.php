@@ -9,10 +9,13 @@ use App\Models\SuratCategory;
 use App\Models\TemplateGlobalSetting;
 use App\Models\Role;
 use App\Services\SuratTemplateRendererService;
+use App\Support\SuratDataContract;
+use App\Support\TemplatePlaceholderSynchronizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -142,6 +145,9 @@ class TemplateController extends Controller
             'field_config.*.label'    => ['nullable', 'string'],
             'field_config.*.type'     => ['nullable', 'string'],
             'field_config.*.required' => ['nullable', 'boolean'],
+            'field_config.*.repeatable' => ['nullable', 'boolean'],
+            'field_config.*.add_label'  => ['nullable', 'string'],
+            'field_config.*.item_label' => ['nullable', 'string'],
             'layout'                  => ['nullable', 'array'],
         ]);
 
@@ -157,7 +163,7 @@ class TemplateController extends Controller
 
         // ── Simpan field_config ────────────────────────────────────────────
         if ($request->has('field_config')) {
-            $fieldConfig = collect($request->input('field_config', []))
+            $fieldConfig = collect(SuratDataContract::filterDynamicFieldConfig($request->input('field_config', [])))
                 ->filter(fn ($f) => is_array($f) && !empty(trim($f['name'] ?? '')) && !empty(trim($f['label'] ?? '')))
                 ->map(fn ($f) => [
                     'name'        => trim((string) ($f['name'] ?? '')),
@@ -167,9 +173,26 @@ class TemplateController extends Controller
                     'placeholder' => (string) ($f['placeholder'] ?? ''),
                     'help'        => (string) ($f['help'] ?? ''),
                     'options'     => $f['options'] ?? [],
+                    'repeatable'  => (bool) ($f['repeatable'] ?? false) || (string) ($f['type'] ?? '') === 'repeatable',
+                    'add_label'   => (string) ($f['add_label'] ?? 'Tambah'),
+                    'item_label'  => (string) ($f['item_label'] ?? 'Item'),
                 ])
                 ->values()
                 ->all();
+
+            $duplicateNames = collect($fieldConfig)
+                ->map(fn (array $field): string => strtolower(trim((string) ($field['name'] ?? ''))))
+                ->filter(fn (string $name): bool => $name !== '')
+                ->countBy()
+                ->filter(fn (int $count): bool => $count > 1)
+                ->keys()
+                ->values();
+
+            if ($duplicateNames->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'field_config' => 'Key field dinamis harus unik. Duplikat: '.$duplicateNames->implode(', '),
+                ]);
+            }
 
             $meta['field_config'] = $fieldConfig;
         }
@@ -188,7 +211,7 @@ class TemplateController extends Controller
                 ->where('jenis_surat_id', $jenisSurat->id)
                 ->max('version') + 1;
 
-            SuratTemplate::query()->create([
+            $template = SuratTemplate::query()->create([
                 'jenis_surat_id'  => $jenisSurat->id,
                 'name'            => $templateName,
                 'slug'            => sprintf('template-%s-v%d', $jenisSurat->slug ?: Str::slug($jenisSurat->nama), $nextVersion),
@@ -210,7 +233,10 @@ class TemplateController extends Controller
             }
 
             $activeTemplate->save();
+            $template = $activeTemplate;
         }
+
+        TemplatePlaceholderSynchronizer::syncTemplate($template, $jenisSurat->field_config ?? []);
 
         // ── Simpan layout (margin & indent) ke css_style
         if ($request->has('layout')) {
@@ -305,6 +331,8 @@ class TemplateController extends Controller
             $templateBaru->is_active      = false;
             $templateBaru->version        = 1;
             $templateBaru->save();
+
+            TemplatePlaceholderSynchronizer::syncTemplate($templateBaru, $baru->field_config ?? []);
         }
 
         return redirect()
@@ -341,8 +369,7 @@ class TemplateController extends Controller
                 'id'   => $jenisSurat->allowedRole?->id,
                 'nama' => $jenisSurat->allowedRole?->nama,
             ],
-            'field_config' => collect($jenisSurat->field_config ?? [])
-                ->filter(fn ($f): bool => is_array($f) && filled($f['name'] ?? null))
+            'field_config' => collect(SuratDataContract::filterDynamicFieldConfig($jenisSurat->field_config ?? []))
                 ->map(fn (array $f): array => [
                     'name'        => (string) $f['name'],
                     'label'       => (string) ($f['label'] ?? $f['name']),
@@ -387,4 +414,5 @@ class TemplateController extends Controller
             ] : null,
         ];
     }
+
 }

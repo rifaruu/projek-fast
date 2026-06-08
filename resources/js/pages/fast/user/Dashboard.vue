@@ -8,7 +8,7 @@ const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'
 import {
     FileText, CheckCircle2, XCircle, Plus,
     Download, Eye, AlertCircle, GraduationCap,
-    BookOpen, RotateCcw, X, ZoomIn, ZoomOut, RotateCcw as ResetZoom, ExternalLink,
+    BookOpen, X, ZoomIn, ZoomOut, RotateCcw as ResetZoom, ExternalLink,
     MessageSquare,
 } from 'lucide-vue-next';
 
@@ -163,7 +163,7 @@ const STATUS_STEPS = [
 const DONE_STATUSES = ['validated_admin', 'approved_kaprodi', 'approved_dekan', 'finished'];
 
 function getStepIndex(status: string): number {
-    if (status === 'rejected') return -1;
+    if (status === 'rejected_admin' || status === 'rejected_approver') return -1;
     if (DONE_STATUSES.includes(status)) return 1;
     return 0; // pending
 }
@@ -171,17 +171,19 @@ function getStepIndex(status: string): number {
 function statusLabel(status: string) {
     const map: Record<string, string> = {
         pending:           'Menunggu Validasi',
+        revision_requested:'Sedang Direvisi Admin',
         validated_admin:   'Sudah Divalidasi',
         approved_kaprodi:  'Sudah Divalidasi',
         approved_dekan:    'Sudah Divalidasi',
         finished:          'Sudah Divalidasi',
-        rejected:          'Ditolak',
+        rejected_admin:    'Ditolak Admin',
+        rejected_approver: 'Ditolak Pimpinan',
     };
     return map[status] ?? 'Diproses';
 }
 
 function submissionStatusLabel(item: LatestSubmission) {
-    if (item.status === 'rejected' && item.needsRevision) {
+    if (item.status === 'revision_requested' && item.needsRevision) {
         return 'Perlu Revisi';
     }
 
@@ -189,7 +191,8 @@ function submissionStatusLabel(item: LatestSubmission) {
 }
 
 function statusBadgeClass(status: string) {
-    if (status === 'rejected') return 'bg-red-100 text-red-700';
+    if (status === 'revision_requested') return 'bg-amber-100 text-amber-700';
+    if (status === 'rejected_admin' || status === 'rejected_approver') return 'bg-red-100 text-red-700';
     if (status === 'pending')  return 'bg-amber-100 text-amber-700';
     return 'bg-emerald-100 text-emerald-700';
 }
@@ -213,19 +216,12 @@ function openForm(jenis: JenisSuratOption) {
     showFormModal.value = true;
 }
 
-function resubmit(item: LatestSubmission) {
-    const jenis = props.jenisSurats.find(j => j.id === item.jenisSuratId);
-    if (jenis) {
-        openForm(jenis);
-    }
-}
-
 function rejectionHeadline(item: LatestSubmission) {
     if (item.needsRevision) {
-        return `Perlu revisi dari ${item.rejectedByRole === 'dekan' ? 'Dekan' : 'Kaprodi'}`;
+        return `Sedang direvisi admin setelah catatan ${item.rejectedByRole === 'dekan' ? 'Dekan' : 'Kaprodi'}`;
     }
 
-    return 'Pengajuan ditolak';
+    return item.rejectedByRole === 'admin' ? 'Pengajuan ditolak admin' : 'Pengajuan ditolak pimpinan';
 }
 function closeForm() {
     showFormModal.value = false;
@@ -317,7 +313,7 @@ function todayString() {
                     </div>
 
                     <!-- Timeline 2 tahap -->
-                    <div v-if="item.status !== 'rejected'" class="mt-4">
+                    <div v-if="item.status !== 'rejected_admin' && item.status !== 'rejected_approver'" class="mt-4">
                         <div class="flex items-center">
                             <template v-for="(step, i) in STATUS_STEPS" :key="step.key">
                                 <div class="flex flex-col items-center">
@@ -341,7 +337,7 @@ function todayString() {
                     </div>
 
                     <!-- Ditolak -->
-                    <div v-if="item.status === 'rejected'" class="mt-3">
+                    <div v-if="item.status === 'revision_requested' || item.status === 'rejected_admin' || item.status === 'rejected_approver'" class="mt-3">
                         <div class="flex items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
                             <XCircle class="size-3.5 shrink-0 text-red-500" />
                             <p class="text-xs font-medium text-red-700">{{ rejectionHeadline(item) }}</p>
@@ -395,11 +391,6 @@ function todayString() {
                         </button>
 
                         <!-- Ajukan ulang jika ditolak -->
-                        <button v-if="item.status === 'rejected' && item.needsRevision && item.jenisSuratId && jenisSurats.find(j => j.id === item.jenisSuratId)" type="button"
-                            class="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
-                            @click="resubmit(item)">
-                            <RotateCcw class="size-3.5" /> Perbaiki Pengajuan
-                        </button>
                     </div>
                 </div>
             </div>

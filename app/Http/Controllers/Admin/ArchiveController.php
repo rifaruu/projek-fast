@@ -21,6 +21,7 @@ class ArchiveController extends Controller
 
         $query = Surat::query()
             ->with(['pemohon:id,name,nim_nip', 'jenisSurat:id,nama'])
+            ->whereIn('type', ['pengajuan', 'surat_keluar'])
             ->where('status', 'finished')
             ->whereNotNull('generated_file_path')
             ->latest('tanggal_selesai');
@@ -47,6 +48,7 @@ class ArchiveController extends Controller
         $surats = $query->paginate(15)
             ->through(fn (Surat $s) => [
                 'id'                  => $s->id,
+                'type'                => $s->type,
                 'nomor_surat'         => $s->nomor_surat,
                 'keperluan'           => $s->keperluan,
                 'tanggal_selesai'     => $s->tanggal_selesai?->toISOString(),

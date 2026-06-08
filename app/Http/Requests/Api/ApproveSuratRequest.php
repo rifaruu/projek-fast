@@ -18,9 +18,9 @@ class ApproveSuratRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'decision' => ['required', Rule::in(['approved', 'rejected'])],
+            'decision' => ['required', Rule::in(['approved', 'revision_requested', 'rejected_final'])],
             'notes' => ['nullable', 'string', 'max:2000'],
-            'rejection_reason' => ['required_if:decision,rejected', 'nullable', 'string', 'max:2000'],
+            'rejection_reason' => ['required_if:decision,revision_requested,rejected_final', 'nullable', 'string', 'max:2000'],
         ];
     }
 }

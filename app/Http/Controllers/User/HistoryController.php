@@ -65,9 +65,10 @@ class HistoryController extends Controller
      */
     protected function transformSubmission(Surat $surat): array
     {
-        $latestRejectedFlow = $surat->latestRejectedFlow();
         $latestRevisionFlow = $surat->latestRevisionRequestFlow();
         $latestAdminRejectionFlow = $surat->latestAdminRejectionFlow();
+        $latestApproverFinalRejectionFlow = $surat->latestApproverFinalRejectionFlow();
+        $latestFinalRejectionFlow = $latestAdminRejectionFlow ?? $latestApproverFinalRejectionFlow;
 
         return [
             'id' => $surat->id,
@@ -76,10 +77,10 @@ class HistoryController extends Controller
             'jenisSuratId' => $surat->jenis_surat_id,
             'status' => $surat->status,
             'keperluan' => $surat->keperluan,
-            'rejectionReason' => $latestAdminRejectionFlow?->catatan,
+            'rejectionReason' => $latestFinalRejectionFlow?->catatan,
             'revisionReason' => $latestRevisionFlow?->catatan ?? $surat->catatan_revisi,
-            'rejectedByRole' => $latestRejectedFlow?->role,
-            'needsRevision' => $latestRevisionFlow !== null,
+            'rejectedByRole' => $latestRevisionFlow?->role ?? $latestFinalRejectionFlow?->role,
+            'needsRevision' => $surat->status === Surat::STATUS_REVISION_REQUESTED,
             'revisionCount' => (int) $surat->revisi_ke,
             'submittedAt' => optional($surat->tanggal_pengajuan ?? $surat->created_at)?->toISOString(),
             'neededAt' => optional($surat->tanggal_kebutuhan)?->toDateString(),

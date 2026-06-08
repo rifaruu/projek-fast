@@ -5,11 +5,11 @@ namespace App\Services;
 use App\Models\JenisSurat;
 use App\Models\Surat;
 use App\Models\SuratTemplate;
+use App\Models\User;
+use App\Support\TemplatePlaceholderReplacer;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 
 class TemplateService
 {
@@ -77,7 +77,9 @@ CSS;
     public function renderForSurat(Surat $surat, bool $embedQrInTemplate = true, string $renderMode = 'preview'): array
     {
         $surat->loadMissing([
-            'pemohon',
+            'pemohon.programStudi',
+            'approvedBy.role',
+            'approvedBy.programStudi',
             'jenisSurat.template.placeholders',
             'dataEntries',
         ]);
@@ -311,6 +313,7 @@ CSS;
         $payload   = $this->buildImplicitPlaceholderPayload(
             $suratData,
             [
+                'approval_role_slug' => $surat->finalApprovalRoleSlug(),
                 'surat' => [
                     'nomor_surat' => $surat->nomor_surat,
                     'keperluan' => $surat->keperluan,
@@ -330,6 +333,11 @@ CSS;
                         'nama' => $surat->pemohon?->programStudi?->nama,
                     ],
                 ],
+                'signer' => $this->resolveSignerContext(
+                    $surat->finalApprovalRoleSlug(),
+                    $surat->pemohon?->program_studi_id,
+                    $surat->approvedBy,
+                ),
             ]
         );
 
@@ -346,7 +354,15 @@ CSS;
                 default      => $placeholder->default_value,
             };
 
-            $payload[$key] = $this->normalizePlaceholderValue($key, $value, $placeholder->default_value);
+            $payload[$key] = $this->normalizePlaceholderValue(
+                $key,
+                $value,
+                $payload[$key] ?? $placeholder->default_value
+            );
+        }
+
+        if (is_array(Arr::get($suratData, 'kepada_yth'))) {
+            $payload['__kepada_yth_items'] = Arr::get($suratData, 'kepada_yth');
         }
 
         return $payload;
@@ -363,7 +379,13 @@ CSS;
 
         $suratContext = Arr::get($context, 'surat', []);
         $userContext  = Arr::get($context, 'user', []);
-        $payload      = $this->buildImplicitPlaceholderPayload($data, $context);
+        $payload      = $this->buildImplicitPlaceholderPayload($data, [
+            ...$context,
+            'signer' => Arr::get($context, 'signer', $this->resolveSignerContext(
+                Arr::get($context, 'approval_role_slug'),
+                Arr::get($context, 'pemohon_program_studi_id'),
+            )),
+        ]);
 
         foreach ($template->placeholders as $placeholder) {
             $key       = (string) $placeholder->placeholder_key;
@@ -378,7 +400,15 @@ CSS;
                 default      => Arr::get($context, $sourceKey, $placeholder->default_value),
             };
 
-            $payload[$key] = $this->normalizePlaceholderValue($key, $value, $placeholder->default_value);
+            $payload[$key] = $this->normalizePlaceholderValue(
+                $key,
+                $value,
+                $payload[$key] ?? $placeholder->default_value
+            );
+        }
+
+        if (is_array(Arr::get($data, 'kepada_yth'))) {
+            $payload['__kepada_yth_items'] = Arr::get($data, 'kepada_yth');
         }
 
         return $payload;
@@ -398,12 +428,27 @@ CSS;
             ...$this->flattenContextPlaceholders($data),
             ...$this->flattenContextPlaceholders($suratContext),
             ...$this->flattenContextPlaceholders($userContext),
+            ...$this->flattenContextPlaceholders(Arr::get($context, 'signer', []), 'signer'),
         ];
 
         $aliases = [
             'nama_pemohon' => Arr::get($data, 'nama')
                 ?? Arr::get($data, 'nama_pemohon')
                 ?? Arr::get($userContext, 'name'),
+            'email_pemohon' => Arr::get($userContext, 'email'),
+            'nim_pemohon' => Arr::get($data, 'nim_pemohon')
+                ?? Arr::get($data, 'nim')
+                ?? Arr::get($userContext, 'nim_nip')
+                ?? Arr::get($userContext, 'nomor_induk'),
+            'nomor_induk_pemohon' => Arr::get($data, 'nomor_induk_pemohon')
+                ?? Arr::get($data, 'nim')
+                ?? Arr::get($data, 'nik')
+                ?? Arr::get($userContext, 'nomor_induk')
+                ?? Arr::get($userContext, 'nim_nip'),
+            'program_studi_pemohon' => Arr::get($data, 'program_studi_pemohon')
+                ?? Arr::get($data, 'program_studi')
+                ?? Arr::get($userContext, 'programStudi.nama'),
+            'telepon_pemohon' => Arr::get($userContext, 'no_telepon'),
             'nama' => Arr::get($data, 'nama')
                 ?? Arr::get($data, 'nama_pemohon')
                 ?? Arr::get($userContext, 'name'),
@@ -422,6 +467,12 @@ CSS;
                 ?? Arr::get($userContext, 'nim_nip'),
             'program_studi' => Arr::get($data, 'program_studi')
                 ?? Arr::get($userContext, 'programStudi.nama'),
+            'nama_penanda_tangan' => Arr::get($context, 'signer.name'),
+            'email_penanda_tangan' => Arr::get($context, 'signer.email'),
+            'nik_penanda_tangan' => Arr::get($context, 'signer.nomor_induk'),
+            'nomor_induk_penanda_tangan' => Arr::get($context, 'signer.nomor_induk'),
+            'jabatan_penanda_tangan' => Arr::get($context, 'signer.jabatan'),
+            'program_studi_penanda_tangan' => Arr::get($context, 'signer.program_studi'),
             'lahir' => Arr::get($data, 'lahir')
                 ?? Arr::get($data, 'tempat_tanggal_lahir'),
             'tanggal_surat' => Arr::get($context, 'tanggal_surat'),
@@ -500,6 +551,17 @@ CSS;
     protected function resolveComputedValue(Surat $surat, array $suratData, string $sourceKey): mixed
     {
         return match ($sourceKey) {
+            'email_pemohon'             => Arr::get($surat->pemohon, 'email'),
+            'nim_pemohon'               => Arr::get($surat->pemohon, 'nim_nip') ?? Arr::get($surat->pemohon, 'nomor_induk'),
+            'nomor_induk_pemohon'       => Arr::get($surat->pemohon, 'nomor_induk') ?? Arr::get($surat->pemohon, 'nim_nip'),
+            'program_studi_pemohon'     => Arr::get($surat->pemohon, 'programStudi.nama'),
+            'telepon_pemohon'           => Arr::get($surat->pemohon, 'no_telepon'),
+            'nama_penanda_tangan'       => $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['name'] ?? null,
+            'email_penanda_tangan'      => $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['email'] ?? null,
+            'nik_penanda_tangan'        => $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['nomor_induk'] ?? null,
+            'nomor_induk_penanda_tangan'=> $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['nomor_induk'] ?? null,
+            'jabatan_penanda_tangan'    => $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['jabatan'] ?? null,
+            'program_studi_penanda_tangan' => $this->resolveSignerContext($surat->finalApprovalRoleSlug(), $surat->pemohon?->program_studi_id, $surat->approvedBy)['program_studi'] ?? null,
             'semester_terbilang'      => $this->numberToWords(Arr::get($suratData, 'semester')),
             'tanggal_surat_panjang'   => $this->formatDateLong($surat->tanggal_selesai ?? $surat->created_at ?? now()),
             'tanggal_yudisium_panjang'=> $this->formatDateLong(Arr::get($suratData, 'tanggal_yudisium')),
@@ -509,6 +571,7 @@ CSS;
             'tanggal_sidang_panjang'  => $this->formatDateLong(Arr::get($suratData, 'tanggal_sidang')),
             'kelas_info'              => filled(Arr::get($suratData, 'kelas')) ? 'kelas ' . Arr::get($suratData, 'kelas') : '',
             'dosen_pengampu_info'     => filled(Arr::get($suratData, 'dosen_pengampu')) ? ' dengan dosen pengampu ' . Arr::get($suratData, 'dosen_pengampu') : '',
+            'judul_tugas_akhir_kalimat' => filled(Arr::get($suratData, 'judul_tugas_akhir')) ? 'Judul tugas akhir: ' . Arr::get($suratData, 'judul_tugas_akhir') : '',
             'ruang_sidang_info'       => filled(Arr::get($suratData, 'ruang_sidang')) ? ' di ruang ' . Arr::get($suratData, 'ruang_sidang') : '',
             default                   => null,
         };
@@ -521,6 +584,17 @@ CSS;
     protected function resolveComputedPreviewValue(array $data, array $context, string $sourceKey): mixed
     {
         return match ($sourceKey) {
+            'email_pemohon'             => Arr::get($context, 'user.email'),
+            'nim_pemohon'               => Arr::get($data, 'nim_pemohon') ?? Arr::get($data, 'nim') ?? Arr::get($context, 'user.nim_nip') ?? Arr::get($context, 'user.nomor_induk'),
+            'nomor_induk_pemohon'       => Arr::get($data, 'nomor_induk_pemohon') ?? Arr::get($data, 'nim') ?? Arr::get($data, 'nik') ?? Arr::get($context, 'user.nomor_induk') ?? Arr::get($context, 'user.nim_nip'),
+            'program_studi_pemohon'     => Arr::get($data, 'program_studi_pemohon') ?? Arr::get($data, 'program_studi') ?? Arr::get($context, 'user.programStudi.nama'),
+            'telepon_pemohon'           => Arr::get($context, 'user.no_telepon'),
+            'nama_penanda_tangan'       => Arr::get($context, 'signer.name'),
+            'email_penanda_tangan'      => Arr::get($context, 'signer.email'),
+            'nik_penanda_tangan'        => Arr::get($context, 'signer.nomor_induk'),
+            'nomor_induk_penanda_tangan'=> Arr::get($context, 'signer.nomor_induk'),
+            'jabatan_penanda_tangan'    => Arr::get($context, 'signer.jabatan'),
+            'program_studi_penanda_tangan' => Arr::get($context, 'signer.program_studi'),
             'semester_terbilang'      => $this->numberToWords(Arr::get($data, 'semester')),
             'tanggal_surat_panjang'   => $this->formatDateLong(Arr::get($context, 'tanggal_surat', now())),
             'tanggal_yudisium_panjang'=> $this->formatDateLong(Arr::get($data, 'tanggal_yudisium')),
@@ -530,6 +604,7 @@ CSS;
             'tanggal_sidang_panjang'  => $this->formatDateLong(Arr::get($data, 'tanggal_sidang')),
             'kelas_info'              => filled(Arr::get($data, 'kelas')) ? 'kelas ' . Arr::get($data, 'kelas') : '',
             'dosen_pengampu_info'     => filled(Arr::get($data, 'dosen_pengampu')) ? ' dengan dosen pengampu ' . Arr::get($data, 'dosen_pengampu') : '',
+            'judul_tugas_akhir_kalimat' => filled(Arr::get($data, 'judul_tugas_akhir')) ? 'Judul tugas akhir: ' . Arr::get($data, 'judul_tugas_akhir') : '',
             'ruang_sidang_info'       => filled(Arr::get($data, 'ruang_sidang')) ? ' di ruang ' . Arr::get($data, 'ruang_sidang') : '',
             default                   => null,
         };
@@ -570,15 +645,7 @@ CSS;
             $candidate = $fallback;
         }
 
-        if (is_array($candidate)) {
-            return $this->formatArrayPlaceholder($key, $candidate);
-        }
-
-        if ($candidate instanceof Collection) {
-            return $this->formatArrayPlaceholder($key, $candidate->all());
-        }
-
-        return (string) ($candidate ?? '');
+        return TemplatePlaceholderReplacer::stringifyValue($key, $candidate);
     }
 
     // ── Replace placeholders ───────────────────────────────────────────────
@@ -588,60 +655,10 @@ CSS;
      */
     protected function replacePlaceholders(string $content, array $placeholderValues): string
     {
-        foreach ($placeholderValues as $key => $value) {
-            // Skip internal keys (QR data)
-            if (str_starts_with((string) $key, '__')) continue;
-
-            $escapedValue = nl2br(e((string) $value), false);
-
-            $content = str_replace(
-                ['{{' . $key . '}}', '{{ ' . $key . ' }}'],
-                $escapedValue,
-                $content
-            );
-        }
-
-        return preg_replace('/{{\s*[\w\.]+\s*}}/', '', $content) ?? $content;
+        return TemplatePlaceholderReplacer::replace($content, $placeholderValues);
     }
 
     // ── Format array placeholder ───────────────────────────────────────────
-
-    /**
-     * @param  array<int, mixed>  $items
-     */
-    protected function formatArrayPlaceholder(string $key, array $items): string
-    {
-        $normalizedItems = collect($items)
-            ->map(static fn ($item): string => trim((string) $item))
-            ->filter(static fn ($item): bool => $item !== '')
-            ->values();
-
-        if ($normalizedItems->isEmpty()) {
-            return '';
-        }
-
-        $isYthList = Str::contains(Str::lower($key), 'yth');
-
-        if ($isYthList && $normalizedItems->count() === 1) {
-            return 'Yth. ' . $normalizedItems->first();
-        }
-
-        if ($isYthList) {
-            return "Yth.\n" . $normalizedItems
-                ->values()
-                ->map(fn (string $item, int $index): string => ($index + 1) . '. ' . $item)
-                ->implode("\n");
-        }
-
-        if ($normalizedItems->count() === 1) {
-            return $normalizedItems->first();
-        }
-
-        return $normalizedItems
-            ->values()
-            ->map(fn (string $item, int $index): string => ($index + 1) . '. ' . $item)
-            ->implode("\n");
-    }
 
     // ── Date & number helpers ──────────────────────────────────────────────
 
@@ -656,6 +673,66 @@ CSS;
         }
 
         return now()->parse((string) $value)->locale('id')->translatedFormat('d F Y');
+    }
+
+    /**
+     * @return array{name: string, email: string, nomor_induk: string, jabatan: string, program_studi: string}
+     */
+    protected function resolveSignerContext(?string $approvalRoleSlug, ?int $preferredProgramStudiId = null, ?User $approvedBy = null): array
+    {
+        static $cache = [];
+
+        $cacheKey = implode(':', [
+            (string) ($approvalRoleSlug ?? ''),
+            (string) ($preferredProgramStudiId ?? ''),
+            (string) ($approvedBy?->id ?? ''),
+        ]);
+
+        if (isset($cache[$cacheKey])) {
+            return $cache[$cacheKey];
+        }
+
+        $signer = null;
+
+        if ($approvedBy !== null && $approvalRoleSlug !== null && $approvedBy->hasRole($approvalRoleSlug)) {
+            $signer = $approvedBy->loadMissing('role', 'programStudi');
+        }
+
+        if ($signer === null && filled($approvalRoleSlug)) {
+            $query = User::query()
+                ->with(['role', 'programStudi'])
+                ->where('is_active', true)
+                ->where('status_approval', 'approved')
+                ->whereHas('role', fn ($roleQuery) => $roleQuery->where('slug', $approvalRoleSlug));
+
+            if ($approvalRoleSlug === 'kaprodi' && $preferredProgramStudiId !== null) {
+                $query->orderByRaw(
+                    'CASE WHEN program_studi_id = ? THEN 0 WHEN program_studi_id IS NULL THEN 2 ELSE 1 END',
+                    [$preferredProgramStudiId]
+                );
+            }
+
+            $signer = $query
+                ->orderBy('id')
+                ->first();
+        }
+
+        return $cache[$cacheKey] = [
+            'name' => (string) ($signer?->name ?? ''),
+            'email' => (string) ($signer?->email ?? ''),
+            'nomor_induk' => (string) ($signer?->nomor_induk ?? $signer?->nim_nip ?? ''),
+            'jabatan' => $this->resolveSignerJabatan($approvalRoleSlug),
+            'program_studi' => (string) ($signer?->programStudi?->nama ?? ''),
+        ];
+    }
+
+    protected function resolveSignerJabatan(?string $approvalRoleSlug): string
+    {
+        return match ($approvalRoleSlug) {
+            'kaprodi' => 'Kaprodi',
+            'dekan' => 'Dekan',
+            default => '',
+        };
     }
 
     protected function numberToWords(mixed $value): string

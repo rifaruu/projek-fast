@@ -56,11 +56,30 @@ class SuratHistoryService
             ['keterangan' => $catatan]);
     }
 
-    public static function rejected(int $suratId, string $alasan): SuratHistory
+    public static function rejected(int $suratId, string $alasan, string $label = 'Surat ditolak', array $meta = []): SuratHistory
     {
         return static::record($suratId, SuratHistory::ACTION_REJECTED,
-            'Surat ditolak',
-            ['keterangan' => $alasan]);
+            $label,
+            [
+                'keterangan' => $alasan,
+                'meta' => $meta,
+            ]);
+    }
+
+    public static function revisionRequested(int $suratId, int $revisiKe, string $roleNama, ?string $catatan = null): SuratHistory
+    {
+        return static::record(
+            $suratId,
+            SuratHistory::ACTION_REVISED,
+            "Dikembalikan {$roleNama} untuk revisi",
+            [
+                'keterangan' => $catatan,
+                'meta' => [
+                    'revisi_ke' => $revisiKe,
+                    'role' => strtolower($roleNama),
+                ],
+            ]
+        );
     }
 
     public static function generated(int $suratId, string $nomorSurat): SuratHistory

@@ -89,7 +89,8 @@ class ApprovalController extends Controller
             'summary' => [
                 'waiting' => $this->baseSummaryQuery($normalizedRole)->whereIn('status', $this->waitingStatusesForRole($normalizedRole))->count(),
                 'approved' => $this->baseSummaryQuery($normalizedRole)->where('status', $this->approvedStatusForRole($normalizedRole))->count(),
-                'rejected' => $this->baseSummaryQuery($normalizedRole)->where('status', Surat::STATUS_REJECTED)->count(),
+                'revision_requested' => $this->baseSummaryQuery($normalizedRole)->where('status', Surat::STATUS_REVISION_REQUESTED)->count(),
+                'final_rejected' => $this->baseSummaryQuery($normalizedRole)->where('status', Surat::STATUS_REJECTED_APPROVER)->count(),
             ],
             'filters' => [
                 'status' => $effectiveStatus,
@@ -248,14 +249,50 @@ class ApprovalController extends Controller
 
         $surat = Surat::query()->findOrFail($id);
 
-        $this->workflow->reject(
+        $this->workflow->requestRevision(
             $surat,
             $this->normalizeRole($user->role?->slug, $user->role?->nama),
             $user,
             $request->string('reason')->toString(),
         );
 
-        return back()->with('success', 'Pengajuan berhasil ditolak.');
+        $normalizedRole = $this->normalizeRole($user->role?->slug, $user->role?->nama);
+
+        return back()->with(
+            'success',
+            $normalizedRole === FastApprovalWorkflowService::ROLE_KAPRODI
+                ? 'Surat dikembalikan oleh Kaprodi untuk revisi admin.'
+                : 'Surat dikembalikan oleh Dekan untuk revisi admin.'
+        );
+    }
+
+    public function finalReject(Request $request, int $id): RedirectResponse
+    {
+        $request->validate([
+            'reason' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        abort_if($user === null, 403);
+
+        $user->loadMissing('role');
+
+        $surat = Surat::query()->findOrFail($id);
+        $normalizedRole = $this->normalizeRole($user->role?->slug, $user->role?->nama);
+
+        $this->workflow->finalReject(
+            $surat,
+            $normalizedRole,
+            $user,
+            $request->string('reason')->toString(),
+        );
+
+        return back()->with(
+            'success',
+            $normalizedRole === FastApprovalWorkflowService::ROLE_KAPRODI
+                ? 'Surat ditolak final oleh Kaprodi.'
+                : 'Surat ditolak final oleh Dekan.'
+        );
     }
 
     private function normalizeRole(?string $slug, ?string $name): string

@@ -8,7 +8,7 @@ const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'
 import {
     FileText, CheckCircle2, XCircle, Download, Eye,
     Search, ChevronLeft, ChevronRight, AlertCircle,
-    RotateCcw, X,
+    X,
 } from 'lucide-vue-next';
 
 type Surat = {
@@ -80,21 +80,22 @@ const STATUS_STEPS = [
 ];
 
 function getStepIndex(status: string): number {
-    if (status === 'rejected') return -1;
+    if (status === 'rejected_admin' || status === 'rejected_approver') return -1;
     return STATUS_STEPS.findIndex(s => s.key === status);
 }
 
 function statusLabel(status: string) {
     const map: Record<string, string> = {
         pending: 'Menunggu Validasi', validated_admin: 'Divalidasi Admin',
+        revision_requested: 'Sedang Direvisi Admin',
         approved_kaprodi: 'Disetujui Kaprodi', approved_dekan: 'Disetujui Dekan',
-        finished: 'Selesai', rejected: 'Ditolak', cancelled: 'Dibatalkan',
+        finished: 'Selesai', rejected_admin: 'Ditolak Admin', rejected_approver: 'Ditolak Pimpinan', cancelled: 'Dibatalkan',
     };
     return map[status] ?? 'Diproses';
 }
 
 function submissionStatusLabel(item: Surat) {
-    if (item.status === 'rejected' && item.needsRevision) {
+    if (item.status === 'revision_requested' && item.needsRevision) {
         return 'Perlu Revisi';
     }
 
@@ -105,10 +106,12 @@ function statusBadgeClass(status: string) {
     const map: Record<string, string> = {
         pending: 'bg-amber-100 text-amber-700',
         validated_admin: 'bg-sky-100 text-sky-700',
+        revision_requested: 'bg-amber-100 text-amber-700',
         approved_kaprodi: 'bg-emerald-100 text-emerald-700',
         approved_dekan: 'bg-green-100 text-green-700',
         finished: 'bg-lime-100 text-lime-800',
-        rejected: 'bg-red-100 text-red-700',
+        rejected_admin: 'bg-red-100 text-red-700',
+        rejected_approver: 'bg-red-100 text-red-700',
         cancelled: 'bg-slate-100 text-slate-600',
     };
     return map[status] ?? 'bg-slate-100 text-slate-600';
@@ -136,11 +139,6 @@ function cancelSurat(id: number) {
         preserveScroll: true,
         onSuccess: () => { cancelConfirmId.value = null; },
     });
-}
-
-function resubmit(item: Surat) {
-    const q = item.jenisSuratId ? `?jenis=${item.jenisSuratId}` : '';
-    router.visit(`/fast/user/ajukan${q}`);
 }
 
 function rejectionDetailLabel(item: Surat) {
@@ -175,10 +173,12 @@ function goToPage(page: number) {
                 <option value="">Semua Status</option>
                 <option value="pending">Menunggu Validasi</option>
                 <option value="validated_admin">Divalidasi Admin</option>
+                <option value="revision_requested">Sedang Direvisi Admin</option>
                 <option value="approved_kaprodi">Disetujui Kaprodi</option>
                 <option value="approved_dekan">Disetujui Dekan</option>
                 <option value="finished">Selesai</option>
-                <option value="rejected">Ditolak</option>
+                <option value="rejected_admin">Ditolak Admin</option>
+                <option value="rejected_approver">Ditolak Pimpinan</option>
                 <option value="cancelled">Dibatalkan</option>
             </select>
             <button type="button"
@@ -242,15 +242,10 @@ function goToPage(page: number) {
                                             @click="openViewer(item, 'download')">
                                             <Download class="size-4" />
                                         </button>
-                                        <button v-if="item.status === 'rejected' && (item.rejectionReason || item.revisionReason)" type="button" title="Lihat detail"
+                                        <button v-if="['revision_requested','rejected_admin','rejected_approver'].includes(item.status) && (item.rejectionReason || item.revisionReason)" type="button" title="Lihat detail"
                                             class="grid size-8 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100"
                                             @click="toggleReason(item.id)">
                                             <AlertCircle class="size-4" />
-                                        </button>
-                                        <button v-if="item.status === 'rejected' && item.needsRevision" type="button" title="Ajukan Ulang"
-                                            class="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
-                                            @click="resubmit(item)">
-                                            <RotateCcw class="size-3.5" /> Revisi
                                         </button>
                                         <button v-if="item.status === 'pending'" type="button" title="Batalkan"
                                             class="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-100"

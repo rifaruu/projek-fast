@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\JenisSurat;
 use App\Models\SuratCategory;
 use App\Services\SuratWorkflowService;
+use App\Support\SuratDataContract;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -181,8 +182,7 @@ class SubmissionController extends Controller
      */
     protected function normalizeFieldConfig(array $fieldConfig): array
     {
-        return collect($fieldConfig)
-            ->filter(fn ($field): bool => is_array($field) && filled($field['name'] ?? null))
+        return collect(SuratDataContract::filterDynamicFieldConfig($fieldConfig))
             ->map(fn (array $field): array => [
                 'name' => (string) $field['name'],
                 'label' => $field['label'] ?? $field['name'],

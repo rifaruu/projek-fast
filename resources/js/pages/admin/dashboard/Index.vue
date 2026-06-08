@@ -3,7 +3,7 @@
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import { FilePlus2, Eye, Download, CheckCircle2, XCircle, Clock3, FileText, TrendingUp, Calendar, AlertTriangle, X, Pencil } from 'lucide-vue-next';
+import { FilePlus2, Eye, CheckCircle2, XCircle, Clock3, FileText, AlertTriangle, X } from 'lucide-vue-next';
 
 type SuratItem = {
     id: number; status: string; nomor_surat?: string | null;
@@ -29,25 +29,22 @@ const props = defineProps<{
     surats: PaginatedSurats;
     summary: Summary;
     recentHistory: HistoryItem[];
-    filters: { status?: string; search?: string; category_id?: string };
+    filters: { search?: string; category_id?: string };
     categories: Array<{ id: number; nama: string }>;
 }>();
 
 const search = ref(props.filters.search ?? '');
-const status = ref(props.filters.status ?? '');
 const categoryId = ref(props.filters.category_id ?? '');
 
 function applyFilter() {
     router.get('/admin/dashboard', {
         search: search.value || undefined,
-        status: status.value || undefined,
         category_id: categoryId.value || undefined,
     }, { preserveState: true, replace: true });
 }
 
 function resetFilter() {
     search.value = '';
-    status.value = '';
     categoryId.value = '';
     applyFilter();
 }
@@ -84,17 +81,17 @@ function submitReject() {
 }
 
 const statCards = computed(() => [
-    { label: 'Total Surat', value: props.summary.total, icon: FileText, color: 'indigo', delta: '+8 bulan ini' },
-    { label: 'Pengajuan Perlu Diproses', value: props.summary.pending + props.summary.validated, icon: Clock3, color: 'amber', delta: 'perlu tindakan' },
-    { label: 'Selesai', value: props.summary.finished, icon: CheckCircle2, color: 'emerald', delta: '+5 minggu ini' },
-    { label: 'Ditolak', value: props.summary.rejected, icon: XCircle, color: 'red', delta: 'perlu revisi' },
+    { label: 'Total Pengajuan', value: props.summary.total, icon: FileText, color: 'indigo', delta: 'semua pengajuan user' },
+    { label: 'Menunggu Proses', value: props.summary.pending, icon: Clock3, color: 'amber', delta: 'perlu tindakan admin' },
+    { label: 'Ditolak Admin', value: props.summary.rejected, icon: XCircle, color: 'red', delta: 'keputusan akhir admin' },
 ]);
 
 function statusLabel(s: string) {
     const map: Record<string, string> = {
         pending: 'Pending', validated_admin: 'Validasi Admin',
         approved_kaprodi: 'Disetujui Kaprodi', approved_dekan: 'Disetujui Dekan',
-        finished: 'Selesai', rejected: 'Ditolak',
+        revision_requested: 'Revisi Admin',
+        finished: 'Selesai', rejected_admin: 'Ditolak Admin', rejected_approver: 'Ditolak Pimpinan',
     };
     return map[s] ?? s;
 }
@@ -109,7 +106,8 @@ function statusLabel(s: string) {
 
 function statusClass(s: string) {
     if (s === 'finished') return 'bg-emerald-100 text-emerald-700';
-    if (s === 'rejected') return 'bg-red-100 text-red-700';
+    if (s === 'rejected_admin' || s === 'rejected_approver') return 'bg-red-100 text-red-700';
+    if (s === 'revision_requested') return 'bg-amber-100 text-amber-700';
     if (s.startsWith('approved')) return 'bg-blue-100 text-blue-700';
     if (s === 'validated_admin') return 'bg-indigo-100 text-indigo-700';
     return 'bg-amber-100 text-amber-700';
@@ -145,7 +143,7 @@ function historyColor(action: string) {
         <Head title="Dashboard Admin" />
 
         <!-- Stat cards -->
-        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <div
                 v-for="card in statCards"
                 :key="card.label"
@@ -194,18 +192,10 @@ function historyColor(action: string) {
                     <input
                         v-model="search"
                         type="text"
-                        placeholder="Cari nama, NIM..."
+                        placeholder="Cari nama pemohon atau NIM..."
                         class="h-8 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100 w-40"
                         @keyup.enter="applyFilter"
                     />
-                    <select v-model="status" class="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none focus:border-emerald-400">
-                        <option value="">Semua Status</option>
-                        <option value="pending">Pending</option>
-                        <option value="validated_admin">Validasi Admin</option>
-                        <option value="approved_kaprodi">Disetujui Kaprodi</option>
-                        <option value="finished">Selesai</option>
-                        <option value="rejected">Ditolak</option>
-                    </select>
                     <select v-model="categoryId" class="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none focus:border-emerald-400">
                         <option value="">Semua Kategori</option>
                         <option v-for="category in categories" :key="category.id" :value="String(category.id)">{{ category.nama }}</option>
@@ -229,7 +219,7 @@ function historyColor(action: string) {
                         <tbody>
                             <tr v-if="surats.data.length === 0">
                                 <td colspan="5" class="px-5 py-12 text-center text-sm text-slate-400">
-                                    Belum ada data surat.
+                                    Belum ada pengajuan user yang menunggu proses.
                                 </td>
                             </tr>
                             <tr
@@ -257,18 +247,12 @@ function historyColor(action: string) {
                                         <Link :href="`/admin/surat/${item.id}`" title="Lihat detail" class="grid size-7 place-items-center rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
                                             <Eye class="size-3.5" />
                                         </Link>
-                                        <a v-if="item.status === 'finished'" :href="`/admin/surat/${item.id}/pdf`" target="_blank" title="Unduh PDF" class="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors">
-                                            <Download class="size-3.5" />
-                                        </a>
                                         <button v-if="item.status === 'pending'" type="button" title="Validasi & teruskan" :disabled="approvingId === item.id" class="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-50" @click="approveSurat(item.id)">
                                             <CheckCircle2 class="size-3.5" />
                                         </button>
                                         <button v-if="item.status === 'pending'" type="button" title="Tolak (beri komentar)" class="grid size-7 place-items-center rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors" @click="openRejectModal(item.id)">
                                             <XCircle class="size-3.5" />
                                         </button>
-                                        <Link v-if="item.status === 'rejected'" :href="`/admin/surat/${item.id}/edit`" title="Edit & teruskan" class="grid size-7 place-items-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors">
-                                            <Pencil class="size-3.5" />
-                                        </Link>
                                     </div>
                                 </td>
                             </tr>

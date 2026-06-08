@@ -153,9 +153,7 @@ HTML,
         dengan IPK akhir {{ipk_akhir}}.
     </p>
 
-    <p v-if="{{judul_tugas_akhir}}">
-        Judul tugas akhir: {{judul_tugas_akhir}}
-    </p>
+    <p>{{judul_tugas_akhir_kalimat}}</p>
 
     <p>
         Surat keterangan ini dibuat untuk dipergunakan sebagaimana mestinya.
@@ -176,6 +174,7 @@ HTML,
                     ['placeholder_key' => 'tanggal_yudisium_panjang', 'label' => 'Tanggal Yudisium Panjang', 'source_type' => 'computed', 'source_key' => 'tanggal_yudisium_panjang', 'is_required' => true, 'description' => 'Tanggal yudisium dalam format panjang.'],
                     ['placeholder_key' => 'ipk_akhir', 'label' => 'IPK Akhir', 'source_type' => 'surat_data', 'source_key' => 'ipk_akhir', 'is_required' => true, 'description' => 'Nilai IPK akhir mahasiswa.'],
                     ['placeholder_key' => 'judul_tugas_akhir', 'label' => 'Judul Tugas Akhir', 'source_type' => 'surat_data', 'source_key' => 'judul_tugas_akhir', 'is_required' => false, 'description' => 'Judul tugas akhir jika dibutuhkan dalam surat.'],
+                    ['placeholder_key' => 'judul_tugas_akhir_kalimat', 'label' => 'Kalimat Judul Tugas Akhir', 'source_type' => 'computed', 'source_key' => 'judul_tugas_akhir_kalimat', 'is_required' => false, 'description' => 'Kalimat lengkap judul tugas akhir jika nilainya tersedia.'],
                     ['placeholder_key' => 'kota_surat', 'label' => 'Kota Surat', 'source_type' => 'system', 'source_key' => 'kota_surat', 'is_required' => true, 'default_value' => 'Cilacap', 'description' => 'Kota penerbitan surat.'],
                     ['placeholder_key' => 'tanggal_surat_panjang', 'label' => 'Tanggal Surat Panjang', 'source_type' => 'computed', 'source_key' => 'tanggal_surat_panjang', 'is_required' => true, 'description' => 'Tanggal final surat.'],
                     ['placeholder_key' => 'penanda_tangan_jabatan', 'label' => 'Jabatan Penanda Tangan', 'source_type' => 'system', 'source_key' => 'penanda_tangan_jabatan', 'is_required' => true, 'default_value' => 'Dekan', 'description' => 'Jabatan pejabat penanda tangan.'],

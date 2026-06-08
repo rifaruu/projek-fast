@@ -7,8 +7,10 @@ use App\Models\JenisSurat;
 use App\Models\Surat;
 use App\Services\SuratTemplateRendererService;
 use App\Services\SuratWorkflowService;
+use App\Support\SuratDataContract;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -74,6 +76,7 @@ class LetterController extends Controller
             'formData' => [
                 'jenis_surat_id' => $jenisSurat->id,
                 'keperluan' => '',
+                ...SuratDataContract::adminManualFieldDefaults(),
                 'data' => $this->initialDynamicData($jenisSurat),
             ],
         ]);
@@ -109,20 +112,19 @@ class LetterController extends Controller
 
         $previewData = $payload['data'];
 
-        if (array_key_exists('kepada_yth', $payload)) {
-            $previewData['kepada_yth'] = $payload['kepada_yth'];
-        }
-
-        if (array_key_exists('lampiran_keterangan', $payload)) {
-            $previewData['lampiran_keterangan'] = $payload['lampiran_keterangan'];
-        }
+        $previewData = array_replace(
+            $previewData,
+            SuratDataContract::extractManualDataFromValidatedPayload($payload),
+        );
 
         $rendered = $this->templateService->renderJenisSuratPreview(
             $jenisSurat,
             $previewData,
             [
+                'approval_role_slug' => $jenisSurat->approvalRole?->slug,
                 'tanggal_surat' => now(),
                 'kota_surat' => \DB::table('template_global_settings')->where('key', 'kota_surat')->value('value') ?? 'Cilacap',    
+                'pemohon_program_studi_id' => $user?->program_studi_id,
                 'surat' => [
                     'nomor_surat' => 'AUTO/GENERATED/AFTER/APPROVAL',
                     'keperluan' => $payload['keperluan'],
@@ -199,11 +201,13 @@ class LetterController extends Controller
             ->with(['jenisSurat.category', 'jenisSurat.template', 'jenisSurat.approvalRole', 'dataEntries', 'approvalFlows'])
             ->findOrFail($id);
 
-        abort_unless($surat->status === Surat::STATUS_REJECTED, 403);
+        abort_unless($surat->status === Surat::STATUS_REVISION_REQUESTED, 403);
         abort_unless(auth()->user()?->hasRole('admin'), 403);
         abort_unless($surat->latestRevisionRequestFlow() !== null, 403);
 
         $jenisSurat = $surat->jenisSurat;
+        $existingData = $this->workflow->extractExistingData($surat);
+        $manualData = SuratDataContract::extractManualDataFromValidatedPayload($existingData);
 
         return Inertia::render('admin/letters/Edit', [
             'surat' => [
@@ -214,7 +218,12 @@ class LetterController extends Controller
             'formData' => [
                 'jenis_surat_id' => $jenisSurat->id,
                 'keperluan' => $surat->keperluan,
-                'data' => $this->workflow->extractExistingData($surat),
+                ...array_replace(
+                    SuratDataContract::adminManualFieldDefaults(),
+                    Arr::only($manualData, SuratDataContract::adminManualScalarFields()),
+                ),
+                'kepada_yth' => is_array($manualData['kepada_yth'] ?? null) ? $manualData['kepada_yth'] : [],
+                'data' => Arr::except($existingData, SuratDataContract::adminManualDataKeys()),
             ],
         ]);
     }
@@ -228,10 +237,10 @@ class LetterController extends Controller
 
         [, $payload] = $this->validatedPayload($request);
 
-        $this->workflow->editRejected($surat, $user, $payload);
+        $updatedSurat = $this->workflow->editRejected($surat, $user, $payload);
 
         return redirect()
-            ->route('admin.dashboard')
+            ->route('admin.surat.show', $updatedSurat->id)
             ->with('success', 'Surat berhasil diperbarui dan diteruskan kembali untuk persetujuan.');
     }
 
@@ -249,9 +258,7 @@ class LetterController extends Controller
             'keperluan' => ['required', 'string', 'max:255'],
             'data' => ['nullable', 'array'],
             'form_data' => ['nullable', 'array'],
-            'kepada_yth' => ['nullable', 'array'],
-            'kepada_yth.*' => ['string', 'max:255'],
-            'lampiran_keterangan' => ['nullable', 'string', 'max:255'],
+            ...SuratDataContract::adminManualValidationRules(),
         ]);
 
         $jenisSurat = JenisSurat::query()
@@ -268,13 +275,11 @@ class LetterController extends Controller
             'data' => $this->workflow->validateDynamicData($jenisSurat, $rawDynamicData),
         ];
 
-        if (array_key_exists('kepada_yth', $validated)) {
-            $payload['kepada_yth'] = $validated['kepada_yth'];
-        }
-
-        if (array_key_exists('lampiran_keterangan', $validated)) {
-            $payload['lampiran_keterangan'] = $validated['lampiran_keterangan'];
-        }
+        $payload = array_replace(
+            $payload,
+            SuratDataContract::extractManualDataFromValidatedPayload($validated),
+        );
+        $payload['data'] = SuratDataContract::mergeManualDataIntoDynamicPayload($payload['data'], $payload);
 
         return [$jenisSurat, $payload];
     }
@@ -303,8 +308,7 @@ class LetterController extends Controller
                 'name' => $jenisSurat->template?->name,
                 'subject' => $jenisSurat->template?->subject,
             ],
-            'field_config' => collect($jenisSurat->field_config ?? [])
-                ->filter(fn ($field): bool => is_array($field) && filled($field['name'] ?? null))
+            'field_config' => collect(SuratDataContract::filterDynamicFieldConfig($jenisSurat->field_config ?? []))
                 ->map(function (array $field): array {
                     $options = collect($field['options'] ?? [])
                         ->map(function ($option): array {
@@ -349,8 +353,7 @@ class LetterController extends Controller
      */
     protected function initialDynamicData(JenisSurat $jenisSurat): array
     {
-        return collect($jenisSurat->field_config ?? [])
-            ->filter(fn ($field): bool => is_array($field) && filled($field['name'] ?? null))
+        return collect(SuratDataContract::filterDynamicFieldConfig($jenisSurat->field_config ?? []))
             ->mapWithKeys(function (array $field): array {
                 $type = strtolower((string) ($field['type'] ?? 'text'));
 

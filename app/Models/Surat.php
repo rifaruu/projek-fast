@@ -16,23 +16,31 @@ class Surat extends Model
 
     public const STATUS_VALIDATED_ADMIN = 'validated_admin';
 
+    public const STATUS_REVISION_REQUESTED = 'revision_requested';
+
     public const STATUS_APPROVED_KAPRODI = 'approved_kaprodi';
 
     public const STATUS_APPROVED_DEKAN = 'approved_dekan';
 
     public const STATUS_FINISHED = 'finished';
 
-    public const STATUS_REJECTED = 'rejected';
+    public const STATUS_REJECTED_ADMIN = 'rejected_admin';
+
+    public const STATUS_REJECTED_APPROVER = 'rejected_approver';
+
+    public const STATUS_REJECTED = self::STATUS_REJECTED_ADMIN;
 
     public const STATUS_CANCELLED = 'cancelled';
 
     public const WORKFLOW_STATUSES = [
         self::STATUS_PENDING,
         self::STATUS_VALIDATED_ADMIN,
+        self::STATUS_REVISION_REQUESTED,
         self::STATUS_APPROVED_KAPRODI,
         self::STATUS_APPROVED_DEKAN,
         self::STATUS_FINISHED,
-        self::STATUS_REJECTED,
+        self::STATUS_REJECTED_ADMIN,
+        self::STATUS_REJECTED_APPROVER,
     ];
 
     protected $fillable = [
@@ -180,6 +188,22 @@ class Surat extends Model
 
     public function canBeRejectedByRole(string $role): bool
     {
+        return $this->canBeFinalRejectedByRole($role);
+    }
+
+    public function canRequestRevisionByRole(string $role): bool
+    {
+        $finalApprovalRole = $this->finalApprovalRoleSlug();
+
+        return match ($role) {
+            'kaprodi' => $this->status === self::STATUS_VALIDATED_ADMIN && $finalApprovalRole === 'kaprodi',
+            'dekan' => $this->status === self::STATUS_VALIDATED_ADMIN && $finalApprovalRole === 'dekan',
+            default => false,
+        };
+    }
+
+    public function canBeFinalRejectedByRole(string $role): bool
+    {
         $finalApprovalRole = $this->finalApprovalRoleSlug();
 
         return match ($role) {
@@ -221,16 +245,21 @@ class Surat extends Model
 
     public function latestRejectedFlow(): ?SuratApprovalFlow
     {
+        $rejectionStatuses = [
+            SuratApprovalFlow::STATUS_REVISION_REQUESTED,
+            SuratApprovalFlow::STATUS_REJECTED_FINAL,
+        ];
+
         if ($this->relationLoaded('approvalFlows')) {
             return $this->approvalFlows
-                ->where('status', SuratApprovalFlow::STATUS_REJECTED)
+                ->whereIn('status', $rejectionStatuses)
                 ->sortByDesc(fn (SuratApprovalFlow $flow) => $flow->tanggal_aksi?->getTimestamp() ?? 0)
                 ->sortByDesc('id')
                 ->first();
         }
 
         return $this->approvalFlows()
-            ->where('status', SuratApprovalFlow::STATUS_REJECTED)
+            ->whereIn('status', $rejectionStatuses)
             ->latest('tanggal_aksi')
             ->latest('id')
             ->first();
@@ -238,19 +267,66 @@ class Surat extends Model
 
     public function latestRevisionRequestFlow(): ?SuratApprovalFlow
     {
-        $flow = $this->latestRejectedFlow();
+        if ($this->relationLoaded('approvalFlows')) {
+            return $this->approvalFlows
+                ->where('status', SuratApprovalFlow::STATUS_REVISION_REQUESTED)
+                ->sortByDesc(fn (SuratApprovalFlow $flow) => $flow->tanggal_aksi?->getTimestamp() ?? 0)
+                ->sortByDesc('id')
+                ->first();
+        }
 
-        return $flow !== null && in_array($flow->role, ['kaprodi', 'dekan'], true)
-            ? $flow
-            : null;
+        return $this->approvalFlows()
+            ->where('status', SuratApprovalFlow::STATUS_REVISION_REQUESTED)
+            ->latest('tanggal_aksi')
+            ->latest('id')
+            ->first();
     }
 
     public function latestAdminRejectionFlow(): ?SuratApprovalFlow
     {
-        $flow = $this->latestRejectedFlow();
+        if ($this->relationLoaded('approvalFlows')) {
+            return $this->approvalFlows
+                ->where('status', SuratApprovalFlow::STATUS_REJECTED_FINAL)
+                ->where('role', 'admin')
+                ->sortByDesc(fn (SuratApprovalFlow $flow) => $flow->tanggal_aksi?->getTimestamp() ?? 0)
+                ->sortByDesc('id')
+                ->first();
+        }
 
-        return $flow !== null && $flow->role === 'admin'
-            ? $flow
-            : null;
+        return $this->approvalFlows()
+            ->where('status', SuratApprovalFlow::STATUS_REJECTED_FINAL)
+            ->where('role', 'admin')
+            ->latest('tanggal_aksi')
+            ->latest('id')
+            ->first();
+    }
+
+    public function latestApproverFinalRejectionFlow(): ?SuratApprovalFlow
+    {
+        if ($this->relationLoaded('approvalFlows')) {
+            return $this->approvalFlows
+                ->where('status', SuratApprovalFlow::STATUS_REJECTED_FINAL)
+                ->whereIn('role', ['kaprodi', 'dekan'])
+                ->sortByDesc(fn (SuratApprovalFlow $flow) => $flow->tanggal_aksi?->getTimestamp() ?? 0)
+                ->sortByDesc('id')
+                ->first();
+        }
+
+        return $this->approvalFlows()
+            ->where('status', SuratApprovalFlow::STATUS_REJECTED_FINAL)
+            ->whereIn('role', ['kaprodi', 'dekan'])
+            ->latest('tanggal_aksi')
+            ->latest('id')
+            ->first();
+    }
+
+    public function isRevisionRequested(): bool
+    {
+        return $this->status === self::STATUS_REVISION_REQUESTED;
+    }
+
+    public function isFinalRejected(): bool
+    {
+        return in_array($this->status, [self::STATUS_REJECTED_ADMIN, self::STATUS_REJECTED_APPROVER], true);
     }
 }

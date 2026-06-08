@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { BadgeCheck, Check, Clock3, Eye, ExternalLink, MessageSquare, Search, ShieldCheck, X, XCircle } from 'lucide-vue-next';
 
-type Summary = { waiting: number; approved: number; rejected: number };
+type Summary = { waiting: number; approved: number; revision_requested: number; final_rejected?: number };
 type DetailLampiran = { id: number; name: string; url: string; type?: string | null };
 type SuratItem = {
     id: number; status: string;
@@ -56,10 +56,12 @@ const detailData            = ref<SuratDetail | null>(null);
 const attachmentPreviewOpen = ref(false);
 const activeAttachment      = ref<DetailLampiran | null>(null);
 const rejectModalOpen       = ref(false);
+const finalRejectModalOpen  = ref(false);
 const noteModalOpen         = ref(false);
 const selectedSurat         = ref<SuratItem | null>(null);
 const toastMessage          = ref('');
 const rejectForm            = useForm({ reason: '' });
+const finalRejectForm       = useForm({ reason: '' });
 const noteForm              = useForm({ catatan: '' });
 
 const normalizedRole = computed(() =>
@@ -69,13 +71,15 @@ const normalizedRole = computed(() =>
 const statusOptions = computed(() => [
     { value: 'validated_admin', label: 'Menunggu Approval' },
     { value: normalizedRole.value === 'kaprodi' ? 'approved_kaprodi' : 'approved_dekan', label: 'Disetujui' },
-    { value: 'rejected', label: 'Ditolak' },
+    { value: 'revision_requested', label: normalizedRole.value === 'kaprodi' ? 'Dikembalikan Kaprodi' : 'Dikembalikan Dekan' },
+    { value: 'rejected_approver', label: normalizedRole.value === 'kaprodi' ? 'Ditolak Kaprodi' : 'Ditolak Dekan' },
 ]);
 
 const summaryCards = computed(() => [
     { title: 'Menunggu Approval', value: props.summary.waiting,  icon: Clock3,    color: 'amber' },
     { title: 'Disetujui',         value: props.summary.approved, icon: BadgeCheck, color: 'emerald' },
-    { title: 'Ditolak',           value: props.summary.rejected, icon: XCircle,   color: 'red' },
+    { title: normalizedRole.value === 'kaprodi' ? 'Revisi dari Kaprodi' : 'Revisi dari Dekan', value: props.summary.revision_requested, icon: XCircle, color: 'red' },
+    { title: 'Ditolak Final', value: props.summary.final_rejected ?? 0, icon: X, color: 'slate' },
 ]);
 
 watch(() => page.props.flash?.success, (message) => {
@@ -94,7 +98,8 @@ function statusLabel(status: string) {
     if (s === 'validated_admin') return 'Menunggu Approval';
     if (s === 'approved_kaprodi') return 'Disetujui Kaprodi';
     if (s === 'approved_dekan') return 'Disetujui Dekan';
-    if (s === 'rejected') return 'Ditolak';
+    if (s === 'revision_requested') return normalizedRole.value === 'kaprodi' ? 'Dikembalikan Kaprodi' : 'Dikembalikan Dekan';
+    if (s === 'rejected_approver') return normalizedRole.value === 'kaprodi' ? 'Ditolak Kaprodi' : 'Ditolak Dekan';
     return 'Diproses';
 }
 
@@ -102,7 +107,8 @@ function statusBadgeClass(status: string) {
     const s = ns(status);
     if (s === 'validated_admin') return 'bg-amber-100 text-amber-700';
     if (s === 'approved_kaprodi' || s === 'approved_dekan') return 'bg-emerald-100 text-emerald-700';
-    if (s === 'rejected') return 'bg-red-100 text-red-700';
+    if (s === 'revision_requested') return 'bg-amber-100 text-amber-700';
+    if (s === 'rejected_approver') return 'bg-slate-200 text-slate-700';
     return 'bg-slate-100 text-slate-600';
 }
 
@@ -149,6 +155,17 @@ function submitReject() {
     if (!selectedSurat.value) return;
     rejectForm.post(`/approval/surat/${selectedSurat.value.id}/reject`, {
         preserveScroll: true, onSuccess: () => closeRejectModal(),
+    });
+}
+
+function openFinalRejectModal(item: SuratItem) {
+    selectedSurat.value = item; finalRejectForm.reset(); finalRejectForm.clearErrors(); finalRejectModalOpen.value = true;
+}
+function closeFinalRejectModal() { finalRejectModalOpen.value = false; selectedSurat.value = null; finalRejectForm.reset(); }
+function submitFinalReject() {
+    if (!selectedSurat.value) return;
+    finalRejectForm.post(`/approval/surat/${selectedSurat.value.id}/final-reject`, {
+        preserveScroll: true, onSuccess: () => closeFinalRejectModal(),
     });
 }
 
@@ -203,17 +220,18 @@ function openDraftPreview() {
                     'border-amber-200 bg-amber-50': card.color==='amber',
                     'border-emerald-200 bg-emerald-50': card.color==='emerald',
                     'border-red-200 bg-red-50': card.color==='red',
+                    'border-slate-200 bg-slate-50': card.color==='slate',
                 }">
                 <div class="flex items-center gap-3">
                     <component :is="card.icon" class="size-8"
-                        :class="{'text-amber-500':card.color==='amber','text-emerald-500':card.color==='emerald','text-red-400':card.color==='red'}" />
+                        :class="{'text-amber-500':card.color==='amber','text-emerald-500':card.color==='emerald','text-red-400':card.color==='red','text-slate-500':card.color==='slate'}" />
                     <div>
                         <p class="text-xs font-medium"
-                            :class="{'text-amber-600':card.color==='amber','text-emerald-600':card.color==='emerald','text-red-600':card.color==='red'}">
+                            :class="{'text-amber-600':card.color==='amber','text-emerald-600':card.color==='emerald','text-red-600':card.color==='red','text-slate-600':card.color==='slate'}">
                             {{ card.title }}
                         </p>
                         <p class="text-3xl font-bold"
-                            :class="{'text-amber-800':card.color==='amber','text-emerald-800':card.color==='emerald','text-red-800':card.color==='red'}">
+                            :class="{'text-amber-800':card.color==='amber','text-emerald-800':card.color==='emerald','text-red-800':card.color==='red','text-slate-800':card.color==='slate'}">
                             {{ card.value }}
                         </p>
                     </div>
@@ -301,15 +319,21 @@ function openDraftPreview() {
                                             @click="submitApprove(item)">
                                             <Check class="size-3.5" />
                                         </button>
-                                        <button type="button" title="Tolak"
+                                        <button type="button" title="Kembalikan untuk revisi"
                                             class="grid size-7 place-items-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                                             @click="openRejectModal(item)">
                                             <X class="size-3.5" />
+                                        </button>
+                                        <button type="button" title="Tolak final"
+                                            class="grid size-7 place-items-center rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors"
+                                            @click="openFinalRejectModal(item)">
+                                            <XCircle class="size-3.5" />
                                         </button>
                                     </template>
                                     <template v-else>
                                         <button disabled class="grid size-7 cursor-not-allowed place-items-center rounded-lg bg-slate-100 text-slate-300 opacity-50"><Check class="size-3.5" /></button>
                                         <button disabled class="grid size-7 cursor-not-allowed place-items-center rounded-lg bg-slate-100 text-slate-300 opacity-50"><X class="size-3.5" /></button>
+                                        <button disabled class="grid size-7 cursor-not-allowed place-items-center rounded-lg bg-slate-100 text-slate-300 opacity-50"><XCircle class="size-3.5" /></button>
                                     </template>
                                 </div>
                             </td>
@@ -415,6 +439,30 @@ function openDraftPreview() {
                         <DialogFooter class="gap-2">
                             <Button type="button" variant="outline" class="rounded-xl" @click="closeRejectModal">Batal</Button>
                             <Button type="submit" class="rounded-xl bg-red-600 text-white hover:bg-red-700" :disabled="rejectForm.processing">Kembalikan ke Admin</Button>
+                        </DialogFooter>
+                    </form>
+                </div>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog :open="finalRejectModalOpen" @update:open="v => v ? null : closeFinalRejectModal()">
+            <DialogContent class="max-w-md rounded-2xl border-0 bg-white p-0" :show-close-button="false">
+                <div class="p-6">
+                    <DialogHeader class="text-left mb-4">
+                        <DialogTitle class="text-lg font-semibold text-slate-900">Tolak Final</DialogTitle>
+                        <DialogDescription class="text-sm text-slate-400">Keputusan akhir. Pengajuan tidak kembali ke admin dan alasan akan terlihat oleh pemohon.</DialogDescription>
+                    </DialogHeader>
+                    <form @submit.prevent="submitFinalReject" class="space-y-4">
+                        <label class="block space-y-1.5">
+                            <span class="text-xs font-medium text-slate-700">Alasan Penolakan <span class="text-red-500">*</span></span>
+                            <textarea v-model="finalRejectForm.reason" rows="4"
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                                placeholder="Jelaskan alasan penolakan final..." />
+                            <p v-if="finalRejectForm.errors.reason" class="text-xs text-red-500">{{ finalRejectForm.errors.reason }}</p>
+                        </label>
+                        <DialogFooter class="gap-2">
+                            <Button type="button" variant="outline" class="rounded-xl" @click="closeFinalRejectModal">Batal</Button>
+                            <Button type="submit" class="rounded-xl bg-slate-800 text-white hover:bg-slate-900" :disabled="finalRejectForm.processing">Tolak Final</Button>
                         </DialogFooter>
                     </form>
                 </div>

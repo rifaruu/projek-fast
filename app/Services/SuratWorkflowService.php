@@ -9,6 +9,7 @@ use App\Models\SuratHistory;
 use App\Models\SuratLampiran;
 use App\Models\User;
 use App\Services\SuratHistoryService;
+use App\Support\SuratDataContract;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -149,9 +150,15 @@ class SuratWorkflowService
     public function editRejected(Surat $surat, User $admin, array $payload): Surat
     {
         abort_unless($admin->hasRole('admin'), 403, 'Hanya admin yang dapat mengedit surat.');
-        abort_unless($surat->status === Surat::STATUS_REJECTED, 403, 'Hanya surat yang ditolak yang dapat diedit.');
+        abort_unless($surat->status === Surat::STATUS_REVISION_REQUESTED, 403, 'Hanya surat revisi approver yang dapat diedit.');
+        $latestAdminApprovalFlow = $surat->approvalFlows()
+            ->where('role', FastApprovalWorkflowService::ROLE_ADMIN)
+            ->where('status', 'approved')
+            ->latest('tanggal_aksi')
+            ->latest('id')
+            ->first();
         abort_if(
-            $surat->validated_by_admin_id === null,
+            $surat->validated_by_admin_id === null && $latestAdminApprovalFlow === null,
             403,
             'Surat belum divalidasi admin sebelumnya.'
         );
@@ -170,7 +177,7 @@ class SuratWorkflowService
         );
         $dynamicData = $this->validateDynamicData($jenisSurat, $dynamicData);
 
-        return DB::transaction(function () use ($surat, $admin, $payload, $dynamicData, $jenisSurat): Surat {
+        return DB::transaction(function () use ($surat, $admin, $payload, $dynamicData, $jenisSurat, $latestAdminApprovalFlow): Surat {
             if (array_key_exists('keperluan', $payload)) {
                 $surat->keperluan = (string) $payload['keperluan'];
             }
@@ -189,6 +196,13 @@ class SuratWorkflowService
             ], JSON_THROW_ON_ERROR);
 
             $surat->status = Surat::STATUS_VALIDATED_ADMIN;
+            $surat->validated_by_admin_id = $surat->validated_by_admin_id
+                ?? $latestAdminApprovalFlow?->approver_id
+                ?? $admin->id;
+            $surat->validated_by_admin_at = $surat->validated_by_admin_at
+                ?? $latestAdminApprovalFlow?->tanggal_aksi
+                ?? $latestAdminApprovalFlow?->approved_at
+                ?? now();
             $surat->rejection_reason = null;
             $surat->catatan_revisi = null;
             $surat->save();
@@ -255,9 +269,8 @@ class SuratWorkflowService
             $this->syncSuratData($surat, $dynamicData);
 
             if ($payload['decision'] === 'rejected') {
-                $this->approvalWorkflow->reject(
+                $this->approvalWorkflow->rejectAdmin(
                     $surat->fresh(),
-                    FastApprovalWorkflowService::ROLE_ADMIN,
                     $admin,
                     (string) ($payload['rejection_reason'] ?? null),
                 );
@@ -288,8 +301,15 @@ class SuratWorkflowService
         $role = $this->resolveApprovalRole($actor);
         abort_if($role === null, 403, 'Role pengguna bukan approver yang valid.');
 
-        if ($payload['decision'] === 'rejected') {
-            $this->approvalWorkflow->reject(
+        if ($payload['decision'] === 'revision_requested') {
+            $this->approvalWorkflow->requestRevision(
+                $surat->fresh(),
+                $role,
+                $actor,
+                (string) ($payload['rejection_reason'] ?? null),
+            );
+        } elseif ($payload['decision'] === 'rejected_final') {
+            $this->approvalWorkflow->finalReject(
                 $surat->fresh(),
                 $role,
                 $actor,
@@ -394,7 +414,14 @@ class SuratWorkflowService
             $messages[$field['name'].'.required'] = ($field['label'] ?? $field['name']).' wajib diisi.';
         }
 
-        return Validator::make($payload, $rules, $messages)->validate();
+        $validated = Validator::make($payload, $rules, $messages)->validate();
+
+        $validatedSpecial = Validator::make(
+            SuratDataContract::extractManualDataFromValidatedPayload($payload),
+            SuratDataContract::adminManualValidationRules(),
+        )->validate();
+
+        return array_replace($validated, $validatedSpecial);
     }
 
     /**
@@ -453,8 +480,7 @@ class SuratWorkflowService
      */
     protected function normalizeFieldConfig(array $fieldConfig): array
     {
-        return collect($fieldConfig)
-            ->filter(static fn ($field): bool => is_array($field) && filled($field['name'] ?? null))
+        return collect(SuratDataContract::filterDynamicFieldConfig($fieldConfig))
             ->map(static fn (array $field): array => [
                 'name' => (string) $field['name'],
                 'label' => $field['label'] ?? $field['name'],
@@ -471,17 +497,51 @@ class SuratWorkflowService
      */
     public function extractExistingData(Surat $surat): array
     {
-        return $surat->dataEntries
-            ->mapWithKeys(function (SuratData $entry): array {
-                $decoded = json_decode((string) $entry->field_value, true);
+        $surat->loadMissing('jenisSurat');
 
+        $fieldTypes = collect($this->normalizeFieldConfig($surat->jenisSurat?->field_config ?? []))
+            ->mapWithKeys(fn (array $field): array => [
+                $field['name'] => strtolower((string) ($field['type'] ?? 'text')),
+            ])
+            ->all();
+
+        return $surat->dataEntries
+            ->mapWithKeys(function (SuratData $entry) use ($fieldTypes): array {
                 return [
-                    $entry->field_name => json_last_error() === JSON_ERROR_NONE
-                        ? $decoded
-                        : $entry->field_value,
+                    $entry->field_name => $this->normalizeStoredFieldValue(
+                        $entry->field_name,
+                        $entry->field_value,
+                        $fieldTypes[$entry->field_name] ?? null,
+                    ),
                 ];
             })
             ->all();
+    }
+
+    protected function normalizeStoredFieldValue(string $fieldName, ?string $storedValue, ?string $fieldType = null): mixed
+    {
+        if ($storedValue === null) {
+            return null;
+        }
+
+        if (in_array($fieldName, SuratDataContract::adminManualArrayFields(), true)
+            || in_array($fieldType, ['repeatable', 'checkbox-group', 'multiselect'], true)
+        ) {
+            $decoded = json_decode($storedValue, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        if ($fieldType === 'checkbox') {
+            if ($storedValue === '') {
+                return false;
+            }
+
+            return filter_var($storedValue, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+                ?? $storedValue === '1';
+        }
+
+        return $storedValue;
     }
 
     protected function resolveApprovalRole(User $actor): ?string

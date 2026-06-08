@@ -39,10 +39,16 @@ class SuratDocumentGeneratorService
             ])->save();
         }
 
-        $rendered     = $this->renderer->renderForSurat($surat->fresh(), false, 'pdf');
-        $outputPath   = $this->makeOutputPath($surat);
-        $freshSurat   = $surat->fresh(['jenisSurat']);
-        $qrCodeBase64 = $this->makeQrCodeBase64($freshSurat);
+        $outputPath = $this->makeOutputPath($surat);
+        $freshSurat = $surat->fresh(['jenisSurat']);
+        $finalizedAt = now();
+        $renderSurat = $freshSurat->forceFill([
+            'status' => Surat::STATUS_FINISHED,
+            'tanggal_selesai' => $finalizedAt,
+            'generated_at' => $finalizedAt,
+        ]);
+        $rendered     = $this->renderer->renderForSurat($renderSurat, false, 'pdf');
+        $qrCodeBase64 = $this->makeQrCodeBase64($renderSurat);
 
         $renderedHtml   = is_array($rendered) ? ($rendered['full']   ?? $rendered['html'] ?? '') : (string) $rendered;
         $renderedBody   = is_array($rendered) ? ($rendered['body']   ?? $renderedHtml) : $renderedHtml;
@@ -87,11 +93,11 @@ class SuratDocumentGeneratorService
         $updates = [
             'rendered_snapshot' => $rendered['html'],
             'generated_file_path' => $outputPath,
-            'generated_at' => now(),
+            'generated_at' => $finalizedAt,
             'generated_file_type' => 'pdf',
             'template_version' => $rendered['template']->version,
             'status' => Surat::STATUS_FINISHED,
-            'tanggal_selesai' => now(),
+            'tanggal_selesai' => $finalizedAt,
         ];
 
         if ($this->suratTableHasColumn('generated_by')) {
@@ -190,7 +196,7 @@ class SuratDocumentGeneratorService
         $bodyHtml   = (string) ($viewPayload['bodyHtml'] ?? '');
         $headerHtml = (string) ($viewPayload['headerHtml'] ?? '');
         $footerHtml = (string) ($viewPayload['footerHtml'] ?? '');
-        $tempDir    = storage_path('app/tmp/mpdf');
+        $tempDir    = $this->resolveMpdfTempDir();
 
         File::ensureDirectoryExists($tempDir);
 
@@ -207,6 +213,7 @@ class SuratDocumentGeneratorService
             'margin_header' => 5,
             'margin_footer' => 6,
             'tempDir'       => $tempDir,
+            'cacheCleanupInterval' => app()->runningUnitTests() ? false : 3600,
         ]);
 
         $mpdf->SetHTMLHeader('<div style="width:100%;">' . $headerHtml . '</div>');
@@ -233,6 +240,19 @@ class SuratDocumentGeneratorService
         }
 
         return $mpdf->Output('', 'S');
+    }
+
+    protected function resolveMpdfTempDir(): string
+    {
+        $baseDir = storage_path('app/tmp/mpdf');
+
+        if (! app()->runningUnitTests()) {
+            return $baseDir;
+        }
+
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            .DIRECTORY_SEPARATOR.'projek-fast-mpdf-tests'
+            .DIRECTORY_SEPARATOR.Str::uuid()->toString();
     }
 
     protected function buildStyles(array $viewPayload): string

@@ -28,15 +28,12 @@ class DashboardController extends Controller
     public function index(Request $request): Response
     {
         $query = Surat::query()
-            ->with(['pemohon', 'jenisSurat']);
+            ->with(['pemohon', 'jenisSurat'])
+            ->where('type', 'pengajuan')
+            ->where('status', Surat::STATUS_PENDING);
 
-        $status = $request->string('status')->toString();
         $search = $request->string('search')->trim()->toString();
         $categoryId = $request->integer('category_id');
-
-        if ($status !== '') {
-            $query->where('status', $status);
-        }
 
         if ($categoryId > 0) {
             $query->whereHas('jenisSurat', function ($jenisSuratQuery) use ($categoryId): void {
@@ -100,30 +97,26 @@ class DashboardController extends Controller
             'surats' => $surats,
             'summary' => (function (): array {
                 $counts = Surat::query()
+                    ->where('type', 'pengajuan')
                     ->selectRaw("
                         COUNT(*) as total,
                         SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as pending,
-                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as validated,
-                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as rejected,
-                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as finished
+                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as rejected
                     ", [
                         Surat::STATUS_PENDING,
-                        Surat::STATUS_VALIDATED_ADMIN,
-                        Surat::STATUS_REJECTED,
-                        Surat::STATUS_FINISHED,
+                        Surat::STATUS_REJECTED_ADMIN,
                     ])
                     ->first();
 
                 return [
                     'total'     => (int) ($counts->total ?? 0),
                     'pending'   => (int) ($counts->pending ?? 0),
-                    'validated' => (int) ($counts->validated ?? 0),
+                    'validated' => 0,
                     'rejected'  => (int) ($counts->rejected ?? 0),
-                    'finished'  => (int) ($counts->finished ?? 0),
+                    'finished'  => 0,
                 ];
             })(),
             'filters' => [
-                'status' => $status,
                 'search' => $search,
                 'category_id' => $categoryId > 0 ? (string) $categoryId : '',
             ],
@@ -166,9 +159,86 @@ class DashboardController extends Controller
             ])->values(),
             'tanggal_pengajuan' => optional($surat->tanggal_pengajuan ?? $surat->created_at)?->toISOString(),
             'status' => $surat->status,
+            'latest_rejection' => (function () use ($surat): ?array {
+                $latestRevisionFlow = $surat->latestRevisionRequestFlow();
+                $latestAdminRejectionFlow = $surat->latestAdminRejectionFlow();
+                $latestApproverFinalRejectionFlow = $surat->latestApproverFinalRejectionFlow();
+                $latestRejectedFlow = $latestRevisionFlow ?? $latestAdminRejectionFlow ?? $latestApproverFinalRejectionFlow;
+
+                if ($latestRejectedFlow === null) {
+                    return null;
+                }
+
+                $isRevisionRequest = $latestRejectedFlow->status === \App\Models\SuratApprovalFlow::STATUS_REVISION_REQUESTED;
+
+                return [
+                    'role' => $latestRejectedFlow->role,
+                    'label' => match ($latestRejectedFlow->role) {
+                        'admin' => 'Ditolak Admin',
+                        'kaprodi' => $isRevisionRequest ? 'Dikembalikan Kaprodi' : 'Ditolak Kaprodi',
+                        'dekan' => $isRevisionRequest ? 'Dikembalikan Dekan' : 'Ditolak Dekan',
+                        default => 'Riwayat Penolakan',
+                    },
+                    'type' => $isRevisionRequest ? 'revision' : 'final_reject',
+                    'note' => $latestRejectedFlow->catatan,
+                    'acted_at' => optional($latestRejectedFlow->tanggal_aksi ?? $latestRejectedFlow->created_at)?->toISOString(),
+                ];
+            })(),
+            'approval_timeline' => $surat->approvalFlows
+                ->sortBy([
+                    ['tanggal_aksi', 'asc'],
+                    ['id', 'asc'],
+                ])
+                ->map(function ($flow): array {
+                    $label = match (true) {
+                        $flow->status === 'approved' && $flow->role === 'admin' => 'Divalidasi Admin',
+                        $flow->status === 'approved' && $flow->role === 'kaprodi' => 'Disetujui Kaprodi',
+                        $flow->status === 'approved' && $flow->role === 'dekan' => 'Disetujui Dekan',
+                        $flow->status === 'rejected_final' && $flow->role === 'admin' => 'Ditolak Admin',
+                        $flow->status === 'revision_requested' && $flow->role === 'kaprodi' => 'Dikembalikan Kaprodi',
+                        $flow->status === 'revision_requested' && $flow->role === 'dekan' => 'Dikembalikan Dekan',
+                        $flow->status === 'rejected_final' && $flow->role === 'kaprodi' => 'Ditolak Kaprodi',
+                        $flow->status === 'rejected_final' && $flow->role === 'dekan' => 'Ditolak Dekan',
+                        $flow->status === 'note' => 'Catatan Approval',
+                        default => (string) ($flow->keterangan ?? 'Riwayat Approval'),
+                    };
+
+                    return [
+                        'id' => $flow->id,
+                        'role' => $flow->role,
+                        'status' => $flow->status,
+                        'label' => $label,
+                        'note' => $flow->catatan,
+                        'acted_at' => optional($flow->tanggal_aksi ?? $flow->created_at)?->toISOString(),
+                    ];
+                })
+                ->values(),
+            'history_timeline' => $surat->histories()
+                ->with('user:id,name')
+                ->latest('created_at')
+                ->latest('id')
+                ->get()
+                ->map(function ($history): array {
+                    return [
+                        'id' => $history->id,
+                        'action' => $history->action,
+                        'label' => match ($history->action) {
+                            'rejected' => (string) ($history->action_label ?: 'Ditolak'),
+                            'revised' => (string) ($history->action_label ?: 'Dikembalikan untuk Revisi'),
+                            default => $history->action_label,
+                        },
+                        'description' => $history->keterangan,
+                        'actor' => $history->user?->name,
+                        'created_at' => optional($history->created_at)?->toISOString(),
+                    ];
+                })
+                ->values(),
             'can_approve' => $surat->canBeValidatedByAdmin(),
-            'can_edit' => $surat->status === Surat::STATUS_REJECTED
-                && $surat->validated_by_admin_id !== null
+            'can_edit' => $surat->status === Surat::STATUS_REVISION_REQUESTED
+                && (
+                    $surat->validated_by_admin_id !== null
+                    || $surat->approvalFlows->contains(fn ($flow) => $flow->role === 'admin' && $flow->status === 'approved')
+                )
                 && $surat->latestRevisionRequestFlow() !== null,
             'previewTemplateUrl' => route('documents.surat.template-preview', $surat->id, absolute: false),
             'generatedDocumentUrl' => filled($surat->nomor_surat) || filled($surat->rendered_snapshot)

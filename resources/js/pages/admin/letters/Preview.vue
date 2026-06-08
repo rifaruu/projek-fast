@@ -32,6 +32,7 @@ type JenisSurat = {
 type FormData = {
     jenis_surat_id: number;
     keperluan: string;
+    perihal?: string;
     kepada_yth?: string[];
     lampiran_keterangan?: string;
     data: Record<string, string | boolean | string[]>;
@@ -48,6 +49,7 @@ const props = defineProps<{
 const form = useForm({
     jenis_surat_id:      props.formData.jenis_surat_id,
     keperluan:           props.formData.keperluan,
+    perihal:             props.formData.perihal ?? '',
     kepada_yth:          props.formData.kepada_yth ?? [],
     lampiran_keterangan: props.formData.lampiran_keterangan ?? '',
     form_data: props.formData.data,
@@ -167,6 +169,10 @@ const steps = needsApproval
                         <div>
                             <p class="text-slate-400">Keperluan</p>
                             <p class="mt-0.5 text-slate-700">{{ formData.keperluan }}</p>
+                        </div>
+                        <div v-if="formData.perihal">
+                            <p class="text-slate-400">Perihal</p>
+                            <p class="mt-0.5 text-slate-700">{{ formData.perihal }}</p>
                         </div>
                         <div v-if="formData.kepada_yth && formData.kepada_yth.length > 0">
                             <p class="text-slate-400">Kepada Yth.</p>

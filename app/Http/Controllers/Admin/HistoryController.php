@@ -18,7 +18,7 @@ class HistoryController extends Controller
         $query = Surat::query()
             ->with(['pemohon:id,name,nim_nip', 'jenisSurat:id,nama'])
             ->where('type', 'surat_keluar')
-            ->where('pemohon_id', auth()->id())
+            ->where('status', '!=', Surat::STATUS_FINISHED)
             ->latest();
 
         if ($search !== '') {

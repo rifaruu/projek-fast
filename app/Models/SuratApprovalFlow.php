@@ -9,7 +9,11 @@ class SuratApprovalFlow extends Model
 {
     public const STATUS_APPROVED = 'approved';
 
-    public const STATUS_REJECTED = 'rejected';
+    public const STATUS_REVISION_REQUESTED = 'revision_requested';
+
+    public const STATUS_REJECTED_FINAL = 'rejected_final';
+
+    public const STATUS_REJECTED = self::STATUS_REJECTED_FINAL;
 
     public const STATUS_NOTE = 'note';
 

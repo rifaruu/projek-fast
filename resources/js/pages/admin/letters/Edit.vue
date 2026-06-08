@@ -24,6 +24,9 @@ type JenisSurat = {
 type FormData = {
     jenis_surat_id: number;
     keperluan: string;
+    perihal?: string;
+    kepada_yth?: string[];
+    lampiran_keterangan?: string;
     data: Record<string, string | boolean | string[]>;
 };
 
@@ -47,14 +50,16 @@ const defaultPresets = [
 const form = useForm({
     jenis_surat_id:      props.formData.jenis_surat_id,
     keperluan:           props.formData.keperluan ?? '',
-    kepada_yth:          (props.formData.data.kepada_yth as string[] | undefined) ?? [] as string[],
-    lampiran_keterangan: (props.formData.data.lampiran_keterangan as string | undefined) ?? '',
+    perihal:             props.formData.perihal ?? (props.formData.data.perihal as string | undefined) ?? '',
+    kepada_yth:          props.formData.kepada_yth ?? (props.formData.data.kepada_yth as string[] | undefined) ?? [] as string[],
+    lampiran_keterangan: props.formData.lampiran_keterangan ?? (props.formData.data.lampiran_keterangan as string | undefined) ?? '',
     form_data:           { ...props.formData.data } as Record<string, string | boolean | string[]>,
 });
 
 // Remove consumed keys so they don't duplicate in form_data
 if (form.form_data.kepada_yth !== undefined) delete form.form_data.kepada_yth;
 if (form.form_data.lampiran_keterangan !== undefined) delete form.form_data.lampiran_keterangan;
+if (form.form_data.perihal !== undefined) delete form.form_data.perihal;
 
 // ── Kepada Yth ─────────────────────────────────────────────────────────────
 const kepadaSearch  = ref('');
@@ -102,6 +107,7 @@ function submit() {
     const payload = {
         jenis_surat_id:      form.jenis_surat_id,
         keperluan:           form.keperluan,
+        perihal:             form.perihal,
         form_data:           {
             ...form.form_data,
             kepada_yth:          form.kepada_yth,
@@ -175,6 +181,12 @@ const hasRequiredFields = computed(() =>
                             :class="form.errors.keperluan ? 'border-red-300' : ''"
                             placeholder="Contoh: Untuk keperluan akademik" />
                         <p v-if="form.errors.keperluan" class="text-xs text-red-500">{{ form.errors.keperluan }}</p>
+                    </label>
+                    <label class="block space-y-1.5">
+                        <span class="text-xs font-medium text-slate-700">Perihal</span>
+                        <input v-model="form.perihal" type="text"
+                            class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400"
+                            placeholder="Contoh: Permohonan Dispensasi" />
                     </label>
                     <label class="block space-y-1.5">
                         <span class="text-xs font-medium text-slate-700">Keterangan Lampiran</span>

@@ -7,6 +7,7 @@ import { Search, Download, Eye, Archive, FileText } from 'lucide-vue-next';
 
 type SuratItem = {
     id: number;
+    type: string;
     nomor_surat?: string | null;
     keperluan?: string | null;
     tanggal_selesai?: string | null;
@@ -53,16 +54,20 @@ function formatDate(d?: string | null) {
         day: '2-digit', month: 'short', year: 'numeric',
     }).format(new Date(d));
 }
+
+function sourceLabel(type: string) {
+    return type === 'surat_keluar' ? 'Surat Keluar Admin' : 'Pengajuan User';
+}
 </script>
 
 <template>
     <AdminLayout
-        title="Arsip Surat Keluar"
-        subtitle="Surat keluar yang sudah selesai dan siap diunduh"
+        title="Arsip Surat"
+        subtitle="Semua dokumen final dari pengajuan user dan surat keluar admin"
         active-menu="archive"
-        :breadcrumbs="[{ label: 'Arsip Surat Keluar' }]"
+        :breadcrumbs="[{ label: 'Arsip Surat' }]"
     >
-        <Head title="Arsip Surat Keluar" />
+        <Head title="Arsip Surat" />
 
         <!-- Tabel -->
         <div class="rounded-2xl border border-slate-200 bg-white overflow-hidden">
@@ -103,8 +108,8 @@ function formatDate(d?: string | null) {
             <!-- Empty state -->
             <div v-if="surats.data.length === 0" class="flex flex-col items-center gap-3 py-16 text-center">
                 <Archive class="size-12 text-slate-200" />
-                <p class="text-sm text-slate-400">Belum ada surat yang selesai.</p>
-                <p class="text-xs text-slate-300">Surat yang sudah di-generate PDF akan muncul di sini.</p>
+                <p class="text-sm text-slate-400">Belum ada dokumen final di arsip.</p>
+                <p class="text-xs text-slate-300">Surat pengajuan user maupun surat keluar admin yang sudah selesai akan muncul di sini.</p>
             </div>
 
             <!-- Table -->
@@ -112,6 +117,7 @@ function formatDate(d?: string | null) {
                 <table class="w-full text-left">
                     <thead class="bg-slate-50">
                         <tr class="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                            <th class="px-5 py-3">Asal</th>
                             <th class="px-5 py-3">Pemohon</th>
                             <th class="px-5 py-3">Jenis Surat</th>
                             <th class="px-5 py-3">Nomor Surat</th>
@@ -123,6 +129,14 @@ function formatDate(d?: string | null) {
                     <tbody>
                         <tr v-for="item in surats.data" :key="item.id"
                             class="border-t border-slate-100 text-sm hover:bg-slate-50/50 transition-colors">
+                            <td class="px-5 py-3.5">
+                                <span
+                                    class="inline-flex rounded-full px-2 py-1 text-[10px] font-semibold"
+                                    :class="item.type === 'surat_keluar' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'"
+                                >
+                                    {{ sourceLabel(item.type) }}
+                                </span>
+                            </td>
                             <td class="px-5 py-3.5">
                                 <p class="text-xs font-semibold text-slate-900">{{ item.pemohon?.name ?? '-' }}</p>
                                 <p class="font-mono text-[10px] text-slate-400">{{ item.pemohon?.nim ?? '-' }}</p>

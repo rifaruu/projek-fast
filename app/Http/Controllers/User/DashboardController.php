@@ -7,6 +7,7 @@ use App\Models\Surat;
 use App\Models\SuratApprovalFlow;
 use App\Models\SuratHistory;
 use App\Models\SuratCategory;
+use App\Support\SuratDataContract;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -56,6 +57,7 @@ class DashboardController extends Controller
         $diprosesStatuses = [
             Surat::STATUS_PENDING,
             Surat::STATUS_VALIDATED_ADMIN,
+            Surat::STATUS_REVISION_REQUESTED,
             Surat::STATUS_APPROVED_KAPRODI,
             Surat::STATUS_APPROVED_DEKAN,
         ];
@@ -68,8 +70,8 @@ class DashboardController extends Controller
                         COUNT(*) as total,
                         SUM(CASE WHEN status IN (" . implode(',', array_fill(0, count($diprosesStatuses), '?')) . ") THEN 1 ELSE 0 END) as diproses,
                         SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as selesai,
-                        SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as ditolak
-                    ", array_merge($diprosesStatuses, [Surat::STATUS_FINISHED, Surat::STATUS_REJECTED]))
+                        SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) as ditolak
+                    ", array_merge($diprosesStatuses, [Surat::STATUS_FINISHED, Surat::STATUS_REJECTED_ADMIN, Surat::STATUS_REJECTED_APPROVER]))
                     ->first();
 
                 return [
@@ -98,8 +100,7 @@ class DashboardController extends Controller
                 'nama'        => $j->nama,
                 'slug'        => $j->slug,
                 'deskripsi'   => $j->deskripsi,
-                'fieldConfig' => collect($j->field_config ?? [])
-                    ->filter(fn ($f): bool => is_array($f) && filled($f['name'] ?? null))
+                'fieldConfig' => collect(SuratDataContract::filterDynamicFieldConfig($j->field_config ?? []))
                     ->map(fn (array $f): array => [
                         'name'        => (string) $f['name'],
                         'label'       => (string) ($f['label'] ?? $f['name']),
@@ -135,9 +136,10 @@ class DashboardController extends Controller
      */
     protected function transformSubmission(Surat $surat): array
     {
-        $latestRejectedFlow = $surat->latestRejectedFlow();
         $latestRevisionFlow = $surat->latestRevisionRequestFlow();
         $latestAdminRejectionFlow = $surat->latestAdminRejectionFlow();
+        $latestApproverFinalRejectionFlow = $surat->latestApproverFinalRejectionFlow();
+        $latestFinalRejectionFlow = $latestAdminRejectionFlow ?? $latestApproverFinalRejectionFlow;
 
         return [
             'id' => $surat->id,
@@ -146,10 +148,10 @@ class DashboardController extends Controller
             'jenisSuratId' => $surat->jenisSurat?->id,
             'status' => $surat->status,
             'keperluan' => $surat->keperluan,
-            'rejectionReason' => $latestAdminRejectionFlow?->catatan,
+            'rejectionReason' => $latestFinalRejectionFlow?->catatan,
             'revisionReason' => $latestRevisionFlow?->catatan ?? $surat->catatan_revisi,
-            'rejectedByRole' => $latestRejectedFlow?->role,
-            'needsRevision' => $latestRevisionFlow !== null,
+            'rejectedByRole' => $latestRevisionFlow?->role ?? $latestFinalRejectionFlow?->role,
+            'needsRevision' => $surat->status === Surat::STATUS_REVISION_REQUESTED,
             'revisionCount' => (int) $surat->revisi_ke,
             'notes' => $surat->approvalFlows
                 ->where('status', SuratApprovalFlow::STATUS_NOTE)

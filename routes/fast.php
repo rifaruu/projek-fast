@@ -201,6 +201,9 @@ Route::middleware(['auth', 'verified', 'approval.access'])
         Route::post('/surat/{id}/reject', [ApprovalDashboardController::class, 'reject'])
             ->whereNumber('id')
             ->name('surat.reject');
+        Route::post('/surat/{id}/final-reject', [ApprovalDashboardController::class, 'finalReject'])
+            ->whereNumber('id')
+            ->name('surat.final-reject');
         Route::post('/surat/{id}/note', [ApprovalDashboardController::class, 'saveNote'])
             ->whereNumber('id')
             ->name('surat.note');

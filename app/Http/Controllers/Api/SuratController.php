@@ -37,7 +37,7 @@ class SuratController extends Controller
             $approvalRoleSlug = $user->hasRole('kaprodi') ? 'kaprodi' : 'dekan';
 
             $query
-                ->where('status', Surat::STATUS_VALIDATED_ADMIN)
+                ->whereIn('status', [Surat::STATUS_VALIDATED_ADMIN])
                 ->whereHas('jenisSurat.approvalRole', fn ($roleQuery) => $roleQuery->where('slug', $approvalRoleSlug));
         } elseif (! $user->hasStaffAccess()) {
             abort(403, 'Anda tidak memiliki akses ke data surat.');
@@ -125,9 +125,11 @@ class SuratController extends Controller
         $updated = $this->workflow->approve($surat, $request->user(), $request->validated());
 
         return response()->json([
-            'message' => $request->string('decision')->toString() === 'rejected'
-                ? 'Pengajuan ditolak oleh approver.'
-                : 'Pengajuan berhasil disetujui.',
+            'message' => match ($request->string('decision')->toString()) {
+                'revision_requested' => 'Pengajuan dikembalikan ke admin untuk revisi.',
+                'rejected_final' => 'Pengajuan ditolak final oleh approver.',
+                default => 'Pengajuan berhasil disetujui.',
+            },
             'data' => $this->transformSurat($updated, true),
         ]);
     }

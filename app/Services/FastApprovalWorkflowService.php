@@ -38,9 +38,16 @@ class FastApprovalWorkflowService
                 'tanggal_aksi' => now(),
             ]);
 
-            $surat->update([
+            $suratUpdatePayload = [
                 'status' => $this->nextStatusForSurat($surat, $role),
-            ]);
+            ];
+
+            if ($role === self::ROLE_ADMIN) {
+                $suratUpdatePayload['validated_by_admin_id'] = $actor?->id;
+                $suratUpdatePayload['validated_by_admin_at'] = now();
+            }
+
+            $surat->update($suratUpdatePayload);
 
             if ($this->shouldPrepareDraftAfterApproval($surat, $role)) {
                 $this->documentGenerator->prepareDraft($surat->fresh());
@@ -62,45 +69,109 @@ class FastApprovalWorkflowService
 
     public function reject(Surat $surat, string $role, ?User $actor = null, ?string $notes = null): SuratApprovalFlow
     {
-        $this->guardRejection($surat, $role);
+        if ($role === self::ROLE_ADMIN) {
+            return $this->rejectAdmin($surat, $actor, $notes);
+        }
 
-        return DB::transaction(function () use ($surat, $role, $actor, $notes): SuratApprovalFlow {
-            $isRevisionRequest = $role !== self::ROLE_ADMIN;
-            $nextRevisionCount = $isRevisionRequest
-                ? ((int) $surat->revisi_ke) + 1
-                : (int) $surat->revisi_ke;
+        return $this->requestRevision($surat, $role, $actor, $notes);
+    }
+
+    public function rejectAdmin(Surat $surat, ?User $actor = null, ?string $notes = null): SuratApprovalFlow
+    {
+        $this->guardFinalRejection($surat, self::ROLE_ADMIN);
+
+        return DB::transaction(function () use ($surat, $actor, $notes): SuratApprovalFlow {
             $flow = $surat->approvalFlows()->create([
                 'approver_id' => $actor?->id,
-                'urutan' => $this->resolveOrder($role),
-                'role' => $role,
-                'status' => SuratApprovalFlow::STATUS_REJECTED,
-                'keterangan' => $isRevisionRequest
-                    ? 'Dikembalikan '.strtoupper($role).' untuk revisi'
-                    : 'Ditolak '.strtoupper($role),
+                'urutan' => $this->resolveOrder(self::ROLE_ADMIN),
+                'role' => self::ROLE_ADMIN,
+                'status' => SuratApprovalFlow::STATUS_REJECTED_FINAL,
+                'keterangan' => 'Ditolak ADMIN',
                 'catatan' => $notes,
                 'approved_at' => now(),
                 'tanggal_aksi' => now(),
             ]);
 
             $surat->update([
-                'status' => Surat::STATUS_REJECTED,
-                'revisi_ke' => $nextRevisionCount,
-                'catatan_revisi' => $isRevisionRequest ? $notes : null,
-                'rejection_reason' => $isRevisionRequest ? null : $notes,
+                'status' => Surat::STATUS_REJECTED_ADMIN,
+                'catatan_revisi' => null,
+                'rejection_reason' => $notes,
             ]);
 
-            if ($isRevisionRequest) {
-                SuratHistoryService::revised(
-                    $surat->id,
-                    $nextRevisionCount,
-                    $notes,
-                );
-            } else {
-                SuratHistoryService::rejected(
-                    $surat->id,
-                    (string) $notes,
-                );
-            }
+            SuratHistoryService::rejected(
+                $surat->id,
+                (string) $notes,
+                'Ditolak Admin',
+                ['role' => self::ROLE_ADMIN, 'type' => 'final_reject']
+            );
+
+            return $flow;
+        });
+    }
+
+    public function requestRevision(Surat $surat, string $role, ?User $actor = null, ?string $notes = null): SuratApprovalFlow
+    {
+        $this->guardRevisionRequest($surat, $role);
+
+        return DB::transaction(function () use ($surat, $role, $actor, $notes): SuratApprovalFlow {
+            $nextRevisionCount = ((int) $surat->revisi_ke) + 1;
+            $flow = $surat->approvalFlows()->create([
+                'approver_id' => $actor?->id,
+                'urutan' => $this->resolveOrder($role),
+                'role' => $role,
+                'status' => SuratApprovalFlow::STATUS_REVISION_REQUESTED,
+                'keterangan' => 'Dikembalikan '.strtoupper($role).' untuk revisi',
+                'catatan' => $notes,
+                'approved_at' => now(),
+                'tanggal_aksi' => now(),
+            ]);
+
+            $surat->update([
+                'status' => Surat::STATUS_REVISION_REQUESTED,
+                'revisi_ke' => $nextRevisionCount,
+                'catatan_revisi' => $notes,
+                'rejection_reason' => null,
+            ]);
+
+            SuratHistoryService::revisionRequested(
+                $surat->id,
+                $nextRevisionCount,
+                strtoupper($role),
+                $notes,
+            );
+
+            return $flow;
+        });
+    }
+
+    public function finalReject(Surat $surat, string $role, ?User $actor = null, ?string $notes = null): SuratApprovalFlow
+    {
+        $this->guardFinalRejection($surat, $role);
+
+        return DB::transaction(function () use ($surat, $role, $actor, $notes): SuratApprovalFlow {
+            $flow = $surat->approvalFlows()->create([
+                'approver_id' => $actor?->id,
+                'urutan' => $this->resolveOrder($role),
+                'role' => $role,
+                'status' => SuratApprovalFlow::STATUS_REJECTED_FINAL,
+                'keterangan' => 'Ditolak final '.strtoupper($role),
+                'catatan' => $notes,
+                'approved_at' => now(),
+                'tanggal_aksi' => now(),
+            ]);
+
+            $surat->update([
+                'status' => Surat::STATUS_REJECTED_APPROVER,
+                'catatan_revisi' => null,
+                'rejection_reason' => $notes,
+            ]);
+
+            SuratHistoryService::rejected(
+                $surat->id,
+                (string) $notes,
+                'Ditolak '.strtoupper($role),
+                ['role' => $role, 'type' => 'final_reject']
+            );
 
             return $flow;
         });
@@ -147,6 +218,20 @@ class FastApprovalWorkflowService
     {
         if (! $surat->canBeRejectedByRole($role)) {
             abort(403, 'Status surat tidak sesuai untuk penolakan ini.');
+        }
+    }
+
+    protected function guardRevisionRequest(Surat $surat, string $role): void
+    {
+        if (! $surat->canRequestRevisionByRole($role)) {
+            abort(403, 'Status surat tidak sesuai untuk permintaan revisi ini.');
+        }
+    }
+
+    protected function guardFinalRejection(Surat $surat, string $role): void
+    {
+        if (! $surat->canBeFinalRejectedByRole($role)) {
+            abort(403, 'Status surat tidak sesuai untuk penolakan final ini.');
         }
     }
 

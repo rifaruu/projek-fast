@@ -4,6 +4,7 @@
 namespace App\Services;
 
 use App\Models\TemplateGlobalSetting;
+use App\Support\TemplatePlaceholderReplacer;
 
 class SuratKomponenRenderer
 {
@@ -248,8 +249,14 @@ HTML;
     protected static function renderHeaderSurat(array $komp, array $data): string
     {
         $nomor    = static::fill($komp['nomor'] ?? '{{nomor_surat}}', $data);
-        $lampiran = static::fill($komp['lampiran'] ?? '-', $data);
-        $perihal  = static::fill($komp['perihal'] ?? '', $data);
+        $lampiranTemplate = filled($data['lampiran_keterangan'] ?? null)
+            ? '{{lampiran_keterangan}}'
+            : ($komp['lampiran'] ?? '-');
+        $perihalTemplate = filled($data['perihal'] ?? null)
+            ? '{{perihal}}'
+            : ($komp['perihal'] ?? '');
+        $lampiran = static::fill($lampiranTemplate, $data);
+        $perihal  = static::fill($perihalTemplate, $data);
         $kota     = static::fill($komp['kota'] ?? '{{kota_surat}}', $data);
         $tanggal  = static::fill($komp['tanggal'] ?? '{{tanggal_surat_panjang}}', $data);
         $size     = $komp['font_size'] ?? '11pt';
@@ -289,7 +296,9 @@ HTML;
     // ── KEPADA YTH ─────────────────────────────────────────────────────────
     protected static function renderKepadaYth(array $komp, array $data): string
     {
-        $penerima = $komp['penerima'] ?? [];
+        $penerima = is_array($data['__kepada_yth_items'] ?? null) && $data['__kepada_yth_items'] !== []
+            ? $data['__kepada_yth_items']
+            : ($komp['penerima'] ?? []);
         $lokasi   = static::fill($komp['lokasi'] ?? 'di-', $data);
         $tempat   = static::fill($komp['tempat'] ?? 'Tempat', $data);
         $size     = $komp['font_size'] ?? '11pt';
@@ -491,14 +500,6 @@ HTML;
     // ── Helper fill placeholder ────────────────────────────────────────────
     protected static function fill(string $teks, array $data): string
     {
-        foreach ($data as $key => $value) {
-            if (is_array($value)) $value = implode(', ', $value);
-            $teks = str_replace(
-                ['{{' . $key . '}}', '{{ ' . $key . ' }}'],
-                htmlspecialchars((string) $value),
-                $teks
-            );
-        }
-        return $teks;
+        return TemplatePlaceholderReplacer::replace($teks, $data, false);
     }
 }

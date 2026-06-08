@@ -34,7 +34,18 @@ type SuratKomponen =
     | { type: 'garis' };
 
 type FieldOption  = { label: string; value: string };
-type FieldConfig  = { name: string; label: string; type: string; required: boolean; placeholder: string; help: string; options: FieldOption[] };
+type FieldConfig  = {
+    name: string;
+    label: string;
+    type: string;
+    required: boolean;
+    placeholder: string;
+    help: string;
+    options: FieldOption[];
+    repeatable?: boolean;
+    add_label?: string;
+    item_label?: string;
+};
 type Template     = { id: number; name: string; template_header?: string|null; template_body: string; template_footer?: string|null; version: number; preview_url: string; placeholders: any[] };
 type JenisSuratItem = { id: number; nama: string; is_active: boolean; category?: any; template?: { id: number; name: string; version: number }|null };
 type JenisSurat   = { id: number; nama: string; slug?: string|null; kode_surat?: string|null; kode_klasifikasi?: string|null; deskripsi?: string|null; is_active: boolean; perlu_approval: boolean; category?: any; allowed_role?: any; approval_role?: any; field_config: FieldConfig[]; template?: Template|null };
@@ -135,6 +146,25 @@ function addKomponen(tipe: SuratKomponen['type']) { komponen.value.push(makeDefa
 function removeKomponen(i: number) { komponen.value.splice(i, 1); }
 function moveUp(i: number)   { if (i > 0) [komponen.value[i-1], komponen.value[i]] = [komponen.value[i], komponen.value[i-1]]; }
 function moveDown(i: number) { if (i < komponen.value.length-1) [komponen.value[i], komponen.value[i+1]] = [komponen.value[i+1], komponen.value[i]]; }
+function addCenteredNomorPreset() {
+    const titleText = (props.selectedJenisSurat?.nama ?? 'SURAT').toUpperCase();
+
+    komponen.value.unshift(
+        {
+            type: 'subjudul',
+            teks: 'Nomor: {{nomor_surat}}',
+            font_size: '11pt',
+        },
+        {
+            type: 'judul',
+            teks: titleText,
+            align: 'center',
+            font_size: '12pt',
+            bold: true,
+            underline: true,
+        },
+    );
+}
 
 function addRow(k: any)          { k.rows.push({ label: '', nilai: '' }); }
 function removeRow(k: any, i: number) { k.rows.splice(i, 1); }
@@ -146,8 +176,10 @@ function addTembusan(k: any)     { k.items.push(''); }
 function removeTembusan(k: any, i: number) { k.items.splice(i, 1); }
 
 const placeholderUmum = [
-    { key: 'nomor_surat', label: 'No. Surat' }, { key: 'nama_pemohon', label: 'Nama' },
-    { key: 'nim', label: 'NIM' }, { key: 'program_studi', label: 'Prodi' },
+    { key: 'nomor_surat', label: 'No. Surat' }, { key: 'nama_pemohon', label: 'Pemohon' },
+    { key: 'nim_pemohon', label: 'NIM Pemohon' }, { key: 'program_studi_pemohon', label: 'Prodi Pemohon' },
+    { key: 'nama_penanda_tangan', label: 'Penanda Tangan' }, { key: 'jabatan_penanda_tangan', label: 'Jabatan TTD' },
+    { key: 'nomor_induk_penanda_tangan', label: 'Nomor Induk TTD' },
     { key: 'tanggal_surat_panjang', label: 'Tanggal' }, { key: 'kota_surat', label: 'Kota' },
     { key: 'semester', label: 'Semester' },
 ];
@@ -214,10 +246,23 @@ const fieldTypeOptions = [
     { value: 'text', label: 'Teks Singkat' }, { value: 'textarea', label: 'Teks Panjang' },
     { value: 'number', label: 'Angka' }, { value: 'date', label: 'Tanggal' },
     { value: 'select', label: 'Pilihan Dropdown' }, { value: 'checkbox', label: 'Centang' },
-    { value: 'repeatable', label: 'Daftar' }, { value: 'recipient', label: 'Kepada Yth.' },
+    { value: 'repeatable', label: 'Daftar' },
 ];
 
-function addField() { form.field_config.push({ name: '', label: '', type: 'text', required: false, placeholder: '', help: '', options: [] }); }
+function addField() {
+    form.field_config.push({
+        name: '',
+        label: '',
+        type: 'text',
+        required: false,
+        placeholder: '',
+        help: '',
+        options: [],
+        repeatable: false,
+        add_label: 'Tambah',
+        item_label: 'Item',
+    });
+}
 function removeField(i: number) { form.field_config.splice(i, 1); }
 function syncName(field: FieldConfig) {
     if (!field.name) field.name = field.label.toLowerCase().replace(/[^a-z0-9\s_]/g, '').replace(/\s+/g, '_');
@@ -409,7 +454,19 @@ function settingLabel(key: string): string {
 
                         <!-- Tombol tambah komponen -->
                         <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                            <p class="mb-3 text-xs font-semibold text-slate-700">Tambah Komponen</p>
+                            <div class="mb-3 flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-semibold text-slate-700">Tambah Komponen</p>
+                                    <p class="mt-1 text-[11px] text-slate-500">Untuk layout nomor surat di tengah seperti surat keterangan lulus, pakai `Judul` lalu `Sub Judul`, bukan `Header Surat`.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                                    @click="addCenteredNomorPreset"
+                                >
+                                    Preset Nomor Tengah
+                                </button>
+                            </div>
                             <div class="space-y-2">
                                 <div v-for="group in tipeGroups" :key="group.label">
                                     <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ group.label }}</p>

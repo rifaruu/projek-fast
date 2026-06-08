@@ -24,6 +24,7 @@ type JenisSurat = {
 type FormData = {
     jenis_surat_id: number;
     keperluan: string;
+    perihal?: string;
     data: Record<string, string | boolean | string[]>;
 };
 
@@ -46,6 +47,7 @@ const defaultPresets = [
 const form = useForm({
     jenis_surat_id:      props.formData.jenis_surat_id,
     keperluan:           props.formData.keperluan ?? '',
+    perihal:             props.formData.perihal ?? '',
     kepada_yth:          [] as string[],
     lampiran_keterangan: '',
     form_data:           { ...props.formData.data } as Record<string, string | boolean | string[]>,
@@ -171,6 +173,12 @@ const hasRequiredFields = computed(() =>
                             :class="form.errors.keperluan ? 'border-red-300' : ''"
                             placeholder="Contoh: Untuk keperluan akademik" />
                         <p v-if="form.errors.keperluan" class="text-xs text-red-500">{{ form.errors.keperluan }}</p>
+                    </label>
+                    <label class="block space-y-1.5">
+                        <span class="text-xs font-medium text-slate-700">Perihal</span>
+                        <input v-model="form.perihal" type="text"
+                            class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-400"
+                            placeholder="Contoh: Permohonan Dispensasi" />
                     </label>
                     <label class="block space-y-1.5">
                         <span class="text-xs font-medium text-slate-700">Keterangan Lampiran</span>

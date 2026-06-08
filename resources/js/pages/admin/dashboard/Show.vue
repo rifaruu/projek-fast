@@ -2,11 +2,22 @@
 // resources/js/pages/admin/dashboard/Show.vue
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import PdfViewer from '@/components/PdfViewer.vue';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import { FileText, Download, Eye, ArrowLeft, Clock, CheckCircle, XCircle, QrCode, X, ShieldCheck, AlertTriangle, FileEdit } from 'lucide-vue-next';
 
 type Lampiran = { id: number; name: string; url: string; type: string };
+type TimelineItem = {
+    id: number;
+    label: string;
+    note?: string | null;
+    acted_at?: string | null;
+    created_at?: string | null;
+    status?: string | null;
+    action?: string | null;
+    actor?: string | null;
+    role?: string | null;
+};
 type Surat = {
     id: number;
     nomor_surat?: string|null;
@@ -17,6 +28,15 @@ type Surat = {
     lampiran: Lampiran[];
     tanggal_pengajuan: string|null;
     status: string;
+    latest_rejection?: {
+        role?: string | null;
+        label: string;
+        type: 'revision' | 'final_reject';
+        note?: string | null;
+        acted_at?: string | null;
+    } | null;
+    approval_timeline?: TimelineItem[];
+    history_timeline?: TimelineItem[];
     can_approve: boolean;
     can_edit: boolean;
     previewTemplateUrl: string;
@@ -81,19 +101,23 @@ function closeViewer() {
 
 const statusLabel: Record<string, string> = {
     pending:            'Menunggu Validasi',
+    revision_requested: 'Menunggu Revisi Admin',
     validated_admin:    'Sudah Divalidasi Admin',
     approved_kaprodi:   'Disetujui Kaprodi',
     approved_dekan:     'Disetujui Dekan',
     finished:           'Selesai',
-    rejected:           'Ditolak',
+    rejected_admin:     'Ditolak Admin',
+    rejected_approver:  props.latest_rejection?.label ?? 'Ditolak Pimpinan',
 };
 const statusColor: Record<string, string> = {
     pending:            'bg-amber-50 text-amber-700 border-amber-200',
+    revision_requested: 'bg-amber-50 text-amber-700 border-amber-200',
     validated_admin:    'bg-blue-50 text-blue-700 border-blue-200',
     approved_kaprodi:   'bg-emerald-50 text-emerald-700 border-emerald-200',
     approved_dekan:     'bg-emerald-50 text-emerald-700 border-emerald-200',
     finished:           'bg-emerald-100 text-emerald-800 border-emerald-300',
-    rejected:           'bg-red-50 text-red-700 border-red-200',
+    rejected_admin:     'bg-red-50 text-red-700 border-red-200',
+    rejected_approver:  'bg-red-50 text-red-700 border-red-200',
 };
 
 function formatDate(iso: string|null): string {
@@ -102,6 +126,20 @@ function formatDate(iso: string|null): string {
         day: 'numeric', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
     }) + ' WIB';
+}
+
+function timelineBadgeClass(status?: string | null, action?: string | null): string {
+    if (status === 'rejected_final' || status === 'revision_requested' || action === 'rejected' || action === 'revised') {
+        return 'border-red-200 bg-red-50 text-red-700';
+    }
+    if (status === 'approved' || action === 'approved' || action === 'validated') {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    }
+    if (status === 'note') {
+        return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+    }
+
+    return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 </script>
 
@@ -153,6 +191,36 @@ function formatDate(iso: string|null): string {
                     <div class="col-span-2">
                         <p class="text-xs text-slate-400">Keperluan</p>
                         <p class="font-medium text-slate-800">{{ keperluan }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="latest_rejection" class="rounded-2xl border p-6"
+                :class="latest_rejection.type === 'final_reject' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'">
+                <div class="flex items-start gap-3">
+                    <div class="grid size-10 shrink-0 place-items-center rounded-xl"
+                        :class="latest_rejection.type === 'final_reject' ? 'bg-red-100' : 'bg-amber-100'">
+                        <AlertTriangle class="size-5"
+                            :class="latest_rejection.type === 'final_reject' ? 'text-red-600' : 'text-amber-600'" />
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold"
+                            :class="latest_rejection.type === 'final_reject' ? 'text-red-800' : 'text-amber-800'">
+                            {{ latest_rejection.label }}
+                        </p>
+                        <p class="mt-1 text-xs"
+                            :class="latest_rejection.type === 'final_reject' ? 'text-red-700' : 'text-amber-700'">
+                            {{ latest_rejection.type === 'final_reject'
+                                ? 'Pengajuan berhenti di admin dan tidak masuk alur revisi approver.'
+                                : 'Draft dikembalikan oleh approver dan perlu diperbaiki admin sebelum diteruskan lagi.'
+                            }}
+                        </p>
+                        <p v-if="latest_rejection.note" class="mt-3 text-sm text-slate-800">
+                            <span class="font-semibold">Catatan:</span> {{ latest_rejection.note }}
+                        </p>
+                        <p v-if="latest_rejection.acted_at" class="mt-2 text-xs text-slate-500">
+                            {{ formatDate(latest_rejection.acted_at) }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -260,6 +328,50 @@ function formatDate(iso: string|null): string {
                         class="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
                         <Clock class="size-4" />
                         Dokumen belum tersedia — surat belum selesai diproses
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="(approval_timeline?.length ?? 0) > 0 || (history_timeline?.length ?? 0) > 0"
+                class="rounded-2xl border border-slate-200 bg-white p-6">
+                <h2 class="mb-4 text-sm font-semibold text-slate-800">Riwayat Proses</h2>
+
+                <div v-if="(approval_timeline?.length ?? 0) > 0" class="mb-6">
+                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Approval Flow</h3>
+                    <div class="space-y-3">
+                        <div v-for="entry in approval_timeline" :key="`approval-${entry.id}`"
+                            class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <span class="inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                        :class="timelineBadgeClass(entry.status, null)">
+                                        {{ entry.label }}
+                                    </span>
+                                    <p v-if="entry.note" class="mt-2 text-sm text-slate-800">{{ entry.note }}</p>
+                                </div>
+                                <p class="text-xs text-slate-500">{{ formatDate(entry.acted_at ?? null) }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="(history_timeline?.length ?? 0) > 0">
+                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Histori Sistem</h3>
+                    <div class="space-y-3">
+                        <div v-for="entry in history_timeline" :key="`history-${entry.id}`"
+                            class="rounded-xl border border-slate-200 bg-white p-4">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <span class="inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                        :class="timelineBadgeClass(null, entry.action)">
+                                        {{ entry.label }}
+                                    </span>
+                                    <p v-if="entry.description" class="mt-2 text-sm text-slate-800">{{ entry.description }}</p>
+                                    <p v-if="entry.actor" class="mt-2 text-xs text-slate-500">Oleh {{ entry.actor }}</p>
+                                </div>
+                                <p class="text-xs text-slate-500">{{ formatDate(entry.created_at ?? null) }}</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

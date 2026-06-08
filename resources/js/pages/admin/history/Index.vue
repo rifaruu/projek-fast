@@ -65,7 +65,7 @@ function statusClass(s: string) {
 <template>
     <AdminLayout
         title="Riwayat Surat Keluar"
-        subtitle="Daftar surat keluar yang dibuat oleh admin"
+        subtitle="Surat keluar buatan admin yang masih dalam proses atau perlu tindak lanjut"
         active-menu="history"
         :breadcrumbs="[{ label: 'Riwayat Surat Keluar' }]"
     >
@@ -84,7 +84,6 @@ function statusClass(s: string) {
                     <option value="validated_admin">Validasi Admin</option>
                     <option value="approved_kaprodi">Disetujui Kaprodi</option>
                     <option value="approved_dekan">Disetujui Dekan</option>
-                    <option value="finished">Selesai</option>
                     <option value="rejected">Ditolak</option>
                 </select>
                 <button type="button" class="h-9 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors" @click="applyFilter">Terapkan</button>
@@ -109,7 +108,7 @@ function statusClass(s: string) {
                     <tbody>
                         <tr v-if="surats.data.length === 0">
                             <td colspan="5" class="px-5 py-12 text-center text-sm text-slate-400">
-                                Belum ada surat yang dibuat.
+                                Belum ada surat keluar admin yang masih berjalan.
                             </td>
                         </tr>
                         <tr
